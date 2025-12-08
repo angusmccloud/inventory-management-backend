@@ -1,0 +1,260 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Family Inventory Management System - Backend Infrastructure
+  
+  Serverless backend for managing household inventory, shopping lists, and notifications
+  with multi-user access and role-based permissions.
+
+# Global settings for all serverless functions
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs24.x
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref InventoryTable
+        NODE_ENV: !Ref Environment
+        LOG_LEVEL: INFO
+    Tracing: Active
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment environment
+  
+  CognitoUserPoolArn:
+    Type: String
+    Default: ""
+    Description: ARN of the Cognito User Pool for authentication (leave empty for initial deployment)
+  
+  SESFromEmail:
+    Type: String
+    Default: ""
+    Description: Verified email address for sending notifications via SES
+
+Conditions:
+  HasCognitoUserPool: !Not [!Equals [!Ref CognitoUserPoolArn, ""]]
+  HasSESEmail: !Not [!Equals [!Ref SESFromEmail, ""]]
+
+Resources:
+  ##########################################################################
+  #  DynamoDB Table - Single Table Design
+  ##########################################################################
+  InventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-inventory-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: FamilyInventoryManagement
+      
+      # Primary Key
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
+          AttributeType: S
+      
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      
+      # Global Secondary Index 1 - Member lookups and inverted relationships
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        
+        # Global Secondary Index 2 - Low stock queries and status-based filtering
+        - IndexName: GSI2
+          KeySchema:
+            - AttributeName: GSI2PK
+              KeyType: HASH
+            - AttributeName: GSI2SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  ##########################################################################
+  #  Lambda Execution Role
+  ##########################################################################
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess'
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:DeleteItem'
+                  - 'dynamodb:Query'
+                  - 'dynamodb:Scan'
+                  - 'dynamodb:BatchGetItem'
+                  - 'dynamodb:BatchWriteItem'
+                Resource:
+                  - !GetAtt InventoryTable.Arn
+                  - !Sub '${InventoryTable.Arn}/index/*'
+        - PolicyName: SESAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ses:SendEmail'
+                  - 'ses:SendRawEmail'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'ses:FromAddress': !If [HasSESEmail, !Ref SESFromEmail, '*']
+
+  ##########################################################################
+  #  API Gateway - REST API
+  ##########################################################################
+  InventoryApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-api-${Environment}'
+      StageName: !Ref Environment
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        MaxAge: "'3600'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !If [HasCognitoUserPool, !Ref CognitoUserPoolArn, !Ref AWS::NoValue]
+            Identity:
+              Header: Authorization
+      GatewayResponses:
+        UNAUTHORIZED:
+          StatusCode: 401
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        ACCESS_DENIED:
+          StatusCode: 403
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      TracingEnabled: true
+      Tags:
+        Environment: !Ref Environment
+        Application: FamilyInventoryManagement
+
+  ##########################################################################
+  #  Lambda Functions
+  ##########################################################################
+  
+  # Health Check Function (no auth required)
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-health-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/health.handler
+      Description: Health check endpoint for API status monitoring
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        HealthCheckApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /health
+            Method: GET
+            Auth:
+              Authorizer: NONE
+
+  # Lambda Authorizer Function
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Condition: HasCognitoUserPool
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-authorizer-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/authorizer.handler
+      Description: Lambda authorizer for Cognito JWT validation and role-based access
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ARN: !Ref CognitoUserPoolArn
+
+Outputs:
+  InventoryApiUrl:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${InventoryApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+  
+  InventoryTableName:
+    Description: "DynamoDB table name"
+    Value: !Ref InventoryTable
+    Export:
+      Name: !Sub "${AWS::StackName}-TableName"
+  
+  InventoryTableArn:
+    Description: "DynamoDB table ARN"
+    Value: !GetAtt InventoryTable.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-TableArn"
+  
+  LambdaExecutionRoleArn:
+    Description: "Lambda execution role ARN"
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-LambdaRoleArn"
+  
+  ApiId:
+    Description: "API Gateway ID"
+    Value: !Ref InventoryApi
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiId"
