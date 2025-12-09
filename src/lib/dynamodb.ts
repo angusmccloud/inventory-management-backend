@@ -15,8 +15,14 @@ import { DynamoDBDocumentClient, TranslateConfig } from '@aws-sdk/lib-dynamodb';
  * - Connection reuse via HTTP keep-alive
  * - Reduced cold start impact via modular imports
  * - X-Ray tracing enabled
+ * - Local development support via DYNAMODB_ENDPOINT
  */
-const dynamoDBClient = new DynamoDBClient({
+
+// For local development, always use dummy credentials to bypass AWS IAM
+const isLocalDevelopment = process.env['AWS_SAM_LOCAL'] === 'true' || !!process.env['DYNAMODB_ENDPOINT'];
+
+// Build client configuration
+const clientConfig: any = {
   region: process.env['AWS_REGION'] || 'us-east-1',
   maxAttempts: 3,
   requestHandler: {
@@ -24,7 +30,28 @@ const dynamoDBClient = new DynamoDBClient({
     connectionTimeout: 3000,
     requestTimeout: 3000,
   },
-});
+};
+
+// Add endpoint for local DynamoDB
+// Use DYNAMODB_ENDPOINT if provided, otherwise use default local endpoint when AWS_SAM_LOCAL is true
+const localEndpoint = process.env['DYNAMODB_ENDPOINT'] || (process.env['AWS_SAM_LOCAL'] === 'true' ? 'http://host.docker.internal:8000' : undefined);
+
+if (localEndpoint) {
+  clientConfig.endpoint = localEndpoint;
+  // Disable TLS for local development
+  clientConfig.tls = false;
+}
+
+// Always use dummy credentials for local development to bypass AWS IAM
+// This must come last to override any credentials from the environment
+if (isLocalDevelopment) {
+  clientConfig.credentials = {
+    accessKeyId: 'local',
+    secretAccessKey: 'local',
+  };
+}
+
+const dynamoDBClient = new DynamoDBClient(clientConfig);
 
 /**
  * DynamoDB Document Client Configuration

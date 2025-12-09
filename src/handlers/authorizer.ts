@@ -60,6 +60,28 @@ export const handler = async (
     // Extract token from Authorization header
     const token = extractToken(event.authorizationToken);
 
+    // **DEVELOPMENT MODE BYPASS** - Allow mock tokens in local development
+    // Mock tokens are base64-encoded JSON, not proper JWTs
+    if (!token.includes('.') && process.env['AWS_SAM_LOCAL'] === 'true') {
+      logger.warn('Using mock auth bypass for local development');
+      
+      try {
+        const mockPayload = JSON.parse(Buffer.from(token, 'base64').toString());
+        const mockMemberId = mockPayload.sub || 'mock-user-id';
+        const mockEmail = mockPayload.email || 'test@example.com';
+        
+        // Return permissive policy for local development
+        return generatePolicy(mockMemberId, 'Allow', event.methodArn, {
+          memberId: mockMemberId,
+          familyId: '', // Empty until family is created
+          role: 'admin',
+          email: mockEmail,
+        });
+      } catch {
+        logger.warn('Failed to parse mock token, continuing with normal auth');
+      }
+    }
+
     // Decode and validate token
     const decodedToken = await validateToken(token);
 

@@ -1,12 +1,13 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
-import { FamilyService } from '../services/familyService';
-import { createFamilyRequestSchema } from '../types/schemas';
+import { FamilyService } from '../services/familyService.js';
+import { createFamilyRequestSchema } from '../types/schemas.js';
 import { 
   createdResponse, 
   handleError, 
   parseJsonBody 
-} from '../lib/response';
-import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger';
+} from '../lib/response.js';
+import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger.js';
+import { getUserContext } from '../lib/auth.js';
 
 /**
  * POST /families
@@ -19,21 +20,15 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
   logLambdaInvocation('createFamily', event, context.awsRequestId);
 
   try {
-    // Get authenticated user info from authorizer context
-    const authorizer = event.requestContext.authorizer;
-    if (!authorizer || !authorizer['memberId']) {
-      throw new Error('Authentication required');
-    }
-
-    const memberId = authorizer['memberId'] as string;
-    const email = authorizer['email'] as string;
-    const name = authorizer['name'] as string;
+    // Get authenticated user context (supports local development)
+    const userContext = getUserContext(event, logger);
 
     // Parse and validate request body
     const body = parseJsonBody(event.body);
     const validatedData = createFamilyRequestSchema.parse(body);
 
     // Create family with the user as the first admin
+    const { memberId, email, name } = userContext;
     const result = await FamilyService.createFamily(
       { name: validatedData.name, createdBy: memberId },
       { memberId, email, name }

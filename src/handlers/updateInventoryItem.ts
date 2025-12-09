@@ -1,13 +1,14 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
-import { InventoryService } from '../services/inventoryService';
-import { updateInventoryItemRequestSchema } from '../types/schemas';
+import { InventoryService } from '../services/inventoryService.js';
+import { updateInventoryItemRequestSchema } from '../types/schemas.js';
 import { 
   successResponse, 
   handleError, 
   parseJsonBody,
   getPathParameter
-} from '../lib/response';
-import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger';
+} from '../lib/response.js';
+import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger.js';
+import { getUserContext, requireFamilyAccess, requireAdmin } from '../lib/auth.js';
 
 /**
  * PUT /families/{familyId}/inventory/{itemId}
@@ -20,34 +21,23 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
   logLambdaInvocation('updateInventoryItem', event, context.awsRequestId);
 
   try {
-    // Get authenticated user info from authorizer context
-    const authorizer = event.requestContext.authorizer;
-    if (!authorizer || !authorizer['familyId'] || !authorizer['memberId'] || !authorizer['role']) {
-      throw new Error('Authentication required');
-    }
-
-    const userFamilyId = authorizer['familyId'] as string;
-    const memberId = authorizer['memberId'] as string;
-    const userRole = authorizer['role'] as string;
+    // Get authenticated user context (supports local development)
+    const userContext = getUserContext(event, logger, true);
     const familyId = getPathParameter(event.pathParameters, 'familyId');
     const itemId = getPathParameter(event.pathParameters, 'itemId');
 
     // Ensure user can only access their own family
-    if (familyId !== userFamilyId) {
-      throw new Error('Access denied to this family');
-    }
+    requireFamilyAccess(userContext, familyId);
 
     // Only admins can update inventory items
-    if (userRole !== 'admin') {
-      throw new Error('Only admins can update inventory items');
-    }
+    requireAdmin(userContext);
 
     // Parse and validate request body
     const body = parseJsonBody(event.body);
     const validatedData = updateInventoryItemRequestSchema.parse(body);
 
     // Update inventory item
-    const item = await InventoryService.updateItem(familyId, itemId, validatedData, memberId);
+    const item = await InventoryService.updateItem(familyId, itemId, validatedData, userContext.memberId);
 
     logger.info('Inventory item updated successfully', { familyId, itemId });
 

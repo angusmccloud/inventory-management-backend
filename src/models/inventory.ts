@@ -1,18 +1,15 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
-  DynamoDBDocumentClient,
   PutCommand,
   GetCommand,
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { docClient, getTableName } from '../lib/dynamodb';
 import { logger } from '../lib/logger';
 import { generateUUID } from '../lib/uuid';
 import { InventoryItem, InventoryItemInput, KeyBuilder, QueryPatterns } from '../types/entities';
 
-const client = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(client);
-const TABLE_NAME = process.env['TABLE_NAME'] || 'InventoryManagement';
+const TABLE_NAME = getTableName();
 
 /**
  * InventoryItem Model

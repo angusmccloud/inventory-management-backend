@@ -249,6 +249,23 @@ Resources:
             Path: /families
             Method: POST
 
+  # GET /user/families - List all families user is a member of
+  ListUserFamiliesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-user-families-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/listUserFamilies.handler
+      Description: List all families the authenticated user is a member of
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListUserFamiliesApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user/families
+            Method: GET
+
   # GET /families/{familyId} - Get family details
   GetFamilyFunction:
     Type: AWS::Serverless::Function

@@ -32,16 +32,117 @@ npm install
 
 ### 2. Configure Environment
 
-Copy the environment template and fill in your values:
+#### Local Development (`env.json`)
 
-```bash
-cp .env.example .env
+The `env.json` file configures environment variables for Lambda functions in SAM Local. Each function is configured with:
+
+```json
+{
+  "FunctionName": {
+    "DYNAMODB_ENDPOINT": "http://host.docker.internal:8000",
+    "TABLE_NAME": "InventoryTable",
+    "AWS_SAM_LOCAL": "true",
+    "NODE_ENV": "development",
+    "LOG_LEVEL": "DEBUG",
+    "AWS_ACCESS_KEY_ID": "local",
+    "AWS_SECRET_ACCESS_KEY": "local"
+  }
+}
 ```
 
-### 3. Build TypeScript
+**Key Variables**:
+- `AWS_SAM_LOCAL=true`: Triggers automatic local DynamoDB endpoint configuration
+- `AWS_ACCESS_KEY_ID/SECRET`: Dummy credentials for DynamoDB Local
+- `DYNAMODB_ENDPOINT`: Explicit endpoint (optional, auto-detected when AWS_SAM_LOCAL=true)
+
+**Note**: The DynamoDB client automatically uses `http://host.docker.internal:8000` when `AWS_SAM_LOCAL=true`, even if `DYNAMODB_ENDPOINT` isn't set.
+
+#### Production Deployment
+
+For production deployment, configure parameters in `samconfig.toml` or use `--parameter-overrides`.
+
+### 3. Local Development Setup
+
+#### Prerequisites
+- **Docker** (Colima or Docker Engine) - Required for SAM local and DynamoDB Local
+- **AWS CLI** - For creating local DynamoDB tables
+
+#### Quick Start
+
+Use the provided startup script to run everything:
 
 ```bash
+./start-local.sh
+```
+
+This script will:
+1. Start DynamoDB Local in Docker (port 8000)
+2. Create the InventoryTable with dummy credentials
+3. Build TypeScript code
+4. Build SAM artifacts  
+5. Start SAM Local API (port 3001)
+
+The API will be available at: `http://localhost:3001`
+
+#### How Local Development Works
+
+For local development, the backend uses **DynamoDB Local** with dummy AWS credentials to bypass IAM authentication:
+
+- **Credentials**: `AWS_ACCESS_KEY_ID=local`, `AWS_SECRET_ACCESS_KEY=local`
+- **Endpoint**: `http://host.docker.internal:8000` (from Lambda containers)
+- **Auto-configuration**: When `AWS_SAM_LOCAL=true`, the DynamoDB client automatically uses the local endpoint
+
+The DynamoDB table is created using the same dummy credentials that Lambda functions use, ensuring credential isolation in DynamoDB Local works correctly.
+
+#### Manual Setup (Alternative)
+
+If you prefer to start services individually:
+
+**1. Start DynamoDB Local:**
+```bash
+docker run -d -p 8000:8000 --name dynamodb-local \
+  amazon/dynamodb-local -jar DynamoDBLocal.jar -sharedDb
+```
+
+**2. Create the table with dummy credentials:**
+```bash
+AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local \
+  aws dynamodb create-table \
+    --cli-input-json file://create-local-table.json \
+    --endpoint-url http://localhost:8000 \
+    --region us-east-1
+```
+
+**⚠️ Important**: Always use the dummy credentials (`local`/`local`) when creating tables for local development. DynamoDB Local isolates tables by credentials.
+
+**3. Build and start SAM:**
+```bash
 npm run build
+sam build
+
+# Unset host AWS credentials to prevent conflicts
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
+
+# Set Docker host (if using Colima)
+export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
+
+# Start SAM Local with environment variables
+sam local start-api --port 3001 --env-vars env.json --docker-network bridge
+```
+
+#### Verify Setup
+
+Test the health endpoint:
+```bash
+curl http://localhost:3001/health
+```
+
+Test creating a family:
+```bash
+curl -X POST http://localhost:3001/families \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer test" \
+  -d '{"name":"My Family"}'
 ```
 
 ### 4. Run Tests
@@ -57,30 +158,52 @@ npm run test:watch
 npm run test:coverage
 ```
 
-### 5. Local Development
+### 5. Stopping Local Services
 
-**Prerequisites**: Ensure Docker Engine is installed and running before starting local development.
-
-#### Start Docker Engine
-
-On Linux:
 ```bash
-sudo systemctl start docker
-# OR
-sudo service docker start
+# Stop SAM local (Ctrl+C in the terminal where it's running)
+
+# Stop DynamoDB Local
+docker stop dynamodb-local
+docker rm dynamodb-local
 ```
 
-On macOS (with Colima):
-```bash
-colima start
+## Development Workflow
+
+1. Make code changes in `src/`
+2. Run `npm run build` to compile TypeScript
+3. Run `sam build` to update Lambda artifacts
+4. SAM local will auto-reload on next request
+5. Test your changes via curl or frontend
+
+**Note**: You only need to restart SAM if you change `template.yaml`
+
+## Local Development Architecture
+
+```
+┌─────────────────────┐
+│   Frontend          │
+│   localhost:3000    │
+└──────────┬──────────┘
+           │
+           │ HTTP Requests
+           ▼
+┌─────────────────────┐
+│   SAM Local API     │
+│   localhost:3001    │
+│   (Lambda Functions)│
+└──────────┬──────────┘
+           │
+           │ DynamoDB Calls
+           ▼
+┌─────────────────────┐
+│  DynamoDB Local     │
+│  localhost:8000     │
+│  (Docker Container) │
+└─────────────────────┘
 ```
 
-Verify Docker is running:
-```bash
-docker ps
-```
-
-#### Docker Context Configuration
+### 6. Docker Context Configuration
 
 If you're using **Colima** (lightweight Docker alternative), SAM CLI needs to know the Docker socket location:
 
@@ -259,6 +382,37 @@ See `.env.example` for required environment variables.
 
 ## Troubleshooting
 
+### Local DynamoDB Authentication Errors
+
+**Problem**: Lambda functions fail with "User: arn:aws:iam::XXXX is not authorized to perform: dynamodb:PutItem" or "The security token included in the request is invalid."
+
+**Root Cause**: DynamoDB Local isolates tables by AWS credentials. If the table was created with your real AWS credentials but Lambda functions use dummy credentials, they can't access each other's tables.
+
+**Solution**: 
+1. Stop and remove DynamoDB Local:
+   ```bash
+   docker stop dynamodb-local && docker rm dynamodb-local
+   ```
+
+2. Restart using the startup script (which creates tables with dummy credentials):
+   ```bash
+   ./start-local.sh
+   ```
+
+3. Or manually create the table with dummy credentials:
+   ```bash
+   AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local \
+     aws dynamodb create-table \
+       --cli-input-json file://create-local-table.json \
+       --endpoint-url http://localhost:8000 \
+       --region us-east-1
+   ```
+
+**Why this happens**: 
+- SAM Local passes `AWS_SAM_LOCAL=true` to Lambda functions
+- The DynamoDB client uses this to automatically configure dummy credentials and local endpoint
+- Both table creation AND Lambda functions must use the same credentials
+
 ### SAM CLI "Docker not found" Error
 
 **Problem**: `sam local start-api` fails with "Docker not found" even though Docker is running.
@@ -268,11 +422,30 @@ See `.env.example` for required environment variables.
 # For Colima (macOS)
 export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
 
-# For standard Docker Engine
+# For standard Docker Engine (Linux)
 export DOCKER_HOST=unix:///var/run/docker.sock
 
 # Verify Docker is accessible
 docker ps
+```
+
+**Make it permanent** by adding to your shell profile:
+```bash
+# For Colima users (add to ~/.zshrc or ~/.bashrc)
+echo 'export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### DOCKER_HOST Configuration
+
+**For Colima users**: The `start-local.sh` script includes:
+```bash
+export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
+```
+
+**For Docker Engine users**: Comment out or remove the DOCKER_HOST line in `start-local.sh`:
+```bash
+# export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock  # Not needed for Docker Engine
 ```
 
 ### "Cannot use import statement outside a module" Error

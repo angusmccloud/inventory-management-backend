@@ -1,12 +1,13 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
-import { FamilyService } from '../services/familyService';
+import { FamilyService } from '../services/familyService.js';
 import { 
   successResponse, 
   handleError, 
   getPathParameter,
   notFoundResponse
-} from '../lib/response';
-import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger';
+} from '../lib/response.js';
+import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger.js';
+import { getUserContext, requireFamilyAccess } from '../lib/auth.js';
 
 /**
  * GET /families/{familyId}
@@ -19,19 +20,12 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
   logLambdaInvocation('getFamily', event, context.awsRequestId);
 
   try {
-    // Get authenticated user info from authorizer context
-    const authorizer = event.requestContext.authorizer;
-    if (!authorizer || !authorizer['familyId']) {
-      throw new Error('Authentication required');
-    }
-
-    const userFamilyId = authorizer['familyId'] as string;
+    // Get authenticated user context (supports local development)
+    const userContext = getUserContext(event, logger, true);
     const familyId = getPathParameter(event.pathParameters, 'familyId');
 
     // Ensure user can only access their own family
-    if (familyId !== userFamilyId) {
-      throw new Error('Access denied to this family');
-    }
+    requireFamilyAccess(userContext, familyId);
 
     // Get family
     const family = await FamilyService.getFamily(familyId);
