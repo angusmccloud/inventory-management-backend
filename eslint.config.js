@@ -63,10 +63,15 @@ export default [
     ignores: [
       'node_modules/**',
       'dist/**',
+      'build/**',
       'coverage/**',
       '.aws-sam/**',
       '*.config.js',
-      'jest.config.js'
+      'jest.config.js',
+      '*.js',
+      '*.d.ts',
+      '*.js.map',
+      '*.log'
     ]
   }
 ];

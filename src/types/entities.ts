@@ -252,6 +252,60 @@ export const KeyBuilder = {
 };
 
 /**
+ * Input types for creating entities (without generated fields)
+ */
+export interface FamilyInput {
+  name: string;
+  createdBy: string; // memberId
+}
+
+export interface MemberInput {
+  familyId: string;
+  email: string;
+  name: string;
+  role: MemberRole;
+}
+
+export interface InventoryItemInput {
+  familyId: string;
+  name: string;
+  quantity: number;
+  unit?: string;
+  locationId?: string;
+  locationName?: string;
+  preferredStoreId?: string;
+  preferredStoreName?: string;
+  lowStockThreshold: number;
+  notes?: string;
+  createdBy: string;
+}
+
+export interface StorageLocationInput {
+  familyId: string;
+  name: string;
+  description?: string;
+}
+
+export interface StoreInput {
+  familyId: string;
+  name: string;
+  address?: string;
+  notes?: string;
+}
+
+export interface ShoppingListItemInput {
+  familyId: string;
+  inventoryItemId?: string;
+  itemName: string;
+  quantity: number;
+  unit?: string;
+  storeId?: string;
+  storeName?: string;
+  addedBy: string;
+  notes?: string;
+}
+
+/**
  * Query pattern helpers
  */
 export const QueryPatterns = {
