@@ -6,14 +6,14 @@
  */
 
 import { APIGatewayProxyHandler } from 'aws-lambda';
-import { NotificationService } from '../services/notificationService';
+import { NotificationService } from '../services/notificationService.js';
 import {
   successResponse,
   handleError,
   getPathParameter,
-  forbiddenResponse,
-} from '../lib/response';
-import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger';
+} from '../lib/response.js';
+import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger.js';
+import { getUserContext, requireFamilyAccess, requireAdmin } from '../lib/auth.js';
 
 /**
  * POST /families/{familyId}/notifications/{notificationId}/acknowledge
@@ -29,31 +29,16 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
   logLambdaInvocation('acknowledgeNotification', event, context.awsRequestId);
 
   try {
-    // Get authenticated user info from authorizer context
-    const authorizer = event.requestContext.authorizer;
-    if (!authorizer || !authorizer['familyId']) {
-      throw new Error('Authentication required');
-    }
-
-    const userFamilyId = authorizer['familyId'] as string;
-    const userRole = authorizer['role'] as string | undefined;
+    // Get authenticated user context (supports local development)
+    const userContext = getUserContext(event, logger, true);
     const familyId = getPathParameter(event.pathParameters, 'familyId');
     const notificationId = getPathParameter(event.pathParameters, 'notificationId');
 
     // Ensure user can only access their own family
-    if (familyId !== userFamilyId) {
-      throw new Error('Access denied to this family');
-    }
+    requireFamilyAccess(userContext, familyId);
 
-    // Check if user is an admin
-    if (userRole !== 'admin') {
-      logger.warn('Non-admin user attempted to acknowledge notification', {
-        familyId,
-        notificationId,
-        userRole,
-      });
-      return forbiddenResponse('Only family admins can acknowledge notifications');
-    }
+    // Only admins can acknowledge notifications
+    requireAdmin(userContext);
 
     // Acknowledge the notification
     const notification = await NotificationService.acknowledgeNotification(

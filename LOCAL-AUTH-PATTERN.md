@@ -149,13 +149,13 @@ const mockContext: UserContext = {
 
 All handlers have been updated to use this pattern:
 
-### Family Handlers
+### Family Handlers (Phase 3)
 - ✅ `createFamily.ts`
 - ✅ `listUserFamilies.ts`
 - ✅ `getFamily.ts`
 - ✅ `updateFamily.ts`
 
-### Inventory Handlers
+### Inventory Handlers (Phase 3)
 - ✅ `createInventoryItem.ts`
 - ✅ `listInventoryItems.ts`
 - ✅ `getInventoryItem.ts`
@@ -163,6 +163,10 @@ All handlers have been updated to use this pattern:
 - ✅ `adjustInventoryQuantity.ts`
 - ✅ `archiveInventoryItem.ts`
 - ✅ `deleteInventoryItem.ts`
+
+### Notification Handlers (Phase 4)
+- ✅ `listNotifications.ts`
+- ✅ `acknowledgeNotification.ts`
 
 ## Benefits
 
