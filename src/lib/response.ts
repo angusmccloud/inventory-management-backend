@@ -282,21 +282,21 @@ export const parseJsonBody = <T>(body: string | null): T => {
  * Extract path parameter from API Gateway event
  */
 export const getPathParameter = (
-  pathParameters: Record<string, string> | null,
+  pathParameters: Record<string, string | undefined> | null,
   paramName: string
 ): string => {
   if (!pathParameters || !pathParameters[paramName]) {
     throw new Error(`Missing required path parameter: ${paramName}`);
   }
   
-  return pathParameters[paramName];
+  return pathParameters[paramName]!;
 };
 
 /**
  * Extract query parameter from API Gateway event
  */
 export const getQueryParameter = (
-  queryStringParameters: Record<string, string> | null,
+  queryStringParameters: Record<string, string | undefined> | null,
   paramName: string,
   defaultValue?: string
 ): string | undefined => {

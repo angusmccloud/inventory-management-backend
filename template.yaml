@@ -228,6 +228,180 @@ Resources:
         Variables:
           COGNITO_USER_POOL_ARN: !Ref CognitoUserPoolArn
 
+  ##########################################################################
+  #  User Story 1: Family and Inventory Management Functions
+  ##########################################################################
+
+  # POST /families - Create new family
+  CreateFamilyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-create-family-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/createFamily.handler
+      Description: Create a new family with authenticated user as first admin
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateFamilyApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families
+            Method: POST
+
+  # GET /families/{familyId} - Get family details
+  GetFamilyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-family-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/getFamily.handler
+      Description: Retrieve family details by ID
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetFamilyApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}
+            Method: GET
+
+  # PUT /families/{familyId} - Update family details
+  UpdateFamilyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-update-family-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/updateFamily.handler
+      Description: Update family name (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UpdateFamilyApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}
+            Method: PUT
+
+  # POST /families/{familyId}/inventory - Create inventory item
+  CreateInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-create-inventory-item-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/createInventoryItem.handler
+      Description: Create new inventory item (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/inventory
+            Method: POST
+
+  # GET /families/{familyId}/inventory - List inventory items
+  ListInventoryItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-inventory-items-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/listInventoryItems.handler
+      Description: List all inventory items for a family
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListInventoryItemsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/inventory
+            Method: GET
+
+  # GET /families/{familyId}/inventory/{itemId} - Get single inventory item
+  GetInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-inventory-item-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/getInventoryItem.handler
+      Description: Get single inventory item by ID
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}
+            Method: GET
+
+  # PUT /families/{familyId}/inventory/{itemId} - Update inventory item
+  UpdateInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-update-inventory-item-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/updateInventoryItem.handler
+      Description: Update inventory item details (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UpdateInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}
+            Method: PUT
+
+  # PATCH /families/{familyId}/inventory/{itemId}/quantity - Adjust inventory quantity
+  AdjustInventoryQuantityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-adjust-inventory-quantity-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/adjustInventoryQuantity.handler
+      Description: Adjust inventory item quantity (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        AdjustInventoryQuantityApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}/quantity
+            Method: PATCH
+
+  # POST /families/{familyId}/inventory/{itemId}/archive - Archive inventory item
+  ArchiveInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-archive-inventory-item-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/archiveInventoryItem.handler
+      Description: Archive inventory item (soft delete, admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ArchiveInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}/archive
+            Method: POST
+
+  # DELETE /families/{familyId}/inventory/{itemId} - Delete inventory item (not implemented)
+  DeleteInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-delete-inventory-item-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/deleteInventoryItem.handler
+      Description: Delete inventory item endpoint (returns error suggesting archive)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        DeleteInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}
+            Method: DELETE
+
 Outputs:
   InventoryApiUrl:
     Description: "API Gateway endpoint URL"
