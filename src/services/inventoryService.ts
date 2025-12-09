@@ -1,10 +1,14 @@
 import { InventoryItemModel } from '../models/inventory';
 import { StorageLocationModel } from '../models/location';
 import { StoreModel } from '../models/store';
+import { MemberModel } from '../models/member';
+import { FamilyModel } from '../models/family';
+import { NotificationService } from './notificationService';
+import { EmailService } from './emailService';
 import { logger } from '../lib/logger';
-import { 
-  InventoryItem, 
-  InventoryItemInput, 
+import {
+  InventoryItem,
+  InventoryItemInput,
   StorageLocation,
   StorageLocationInput,
   Store,
@@ -16,6 +20,102 @@ import {
  * Business logic for inventory management
  */
 export class InventoryService {
+  /**
+   * Helper method to trigger low-stock notification and email
+   * @param item - The inventory item that is now low stock
+   */
+  private static async triggerLowStockNotification(item: InventoryItem): Promise<void> {
+    try {
+      // Create the notification
+      const result = await NotificationService.createLowStockNotification({
+        familyId: item.familyId,
+        itemId: item.itemId,
+        itemName: item.name,
+        currentQuantity: item.quantity,
+        threshold: item.lowStockThreshold,
+      });
+
+      if (!result.isNew) {
+        // Notification already exists for this item, skip email
+        logger.info('Low stock notification already exists, skipping email', {
+          itemId: item.itemId,
+          familyId: item.familyId,
+          notificationId: result.notification.notificationId,
+        });
+        return;
+      }
+
+      // Get family name for email
+      const family = await FamilyModel.getById(item.familyId);
+      const familyName = family?.name || 'Your Family';
+
+      // Get admin members to send email notifications
+      const members = await MemberModel.listByFamily(item.familyId);
+      const adminMembers = members.filter(
+        (m) => m.role === 'admin' && m.status === 'active' && m.email
+      );
+
+      // Build recipients list
+      const recipients = adminMembers.map((admin) => ({
+        email: admin.email,
+        name: admin.name,
+      }));
+
+      // Send email to all admins
+      if (recipients.length > 0) {
+        try {
+          await EmailService.sendLowStockAlert(recipients, {
+            itemName: item.name,
+            currentQuantity: item.quantity,
+            threshold: item.lowStockThreshold,
+            familyName,
+          });
+        } catch (emailError) {
+          // Log but don't fail the operation if email fails
+          logger.error('Failed to send low stock emails', emailError as Error, {
+            recipientCount: recipients.length,
+            itemId: item.itemId,
+          });
+        }
+      }
+
+      logger.info('Low stock notification triggered', {
+        itemId: item.itemId,
+        notificationId: result.notification.notificationId,
+        adminCount: adminMembers.length,
+      });
+    } catch (error) {
+      // Log but don't fail the main operation
+      logger.error('Failed to trigger low stock notification', error as Error, {
+        itemId: item.itemId,
+        familyId: item.familyId,
+      });
+    }
+  }
+
+  /**
+   * Helper method to resolve low-stock notifications when quantity rises above threshold
+   * @param item - The inventory item that is now above threshold
+   */
+  private static async resolveNotificationsIfAboveThreshold(item: InventoryItem): Promise<void> {
+    try {
+      // Only resolve if item is above threshold
+      if (!InventoryItemModel.isLowStock(item)) {
+        await NotificationService.resolveNotificationsForItem(item.familyId, item.itemId);
+        logger.info('Low stock notifications resolved for item', {
+          itemId: item.itemId,
+          familyId: item.familyId,
+        });
+      }
+    } catch (error) {
+      // Log but don't fail the main operation
+      logger.error('Failed to resolve low stock notifications', error as Error, {
+        itemId: item.itemId,
+        familyId: item.familyId,
+      });
+    }
+  }
+
   /**
    * Create a new inventory item
    */
@@ -120,12 +220,16 @@ export class InventoryService {
 
       // Check if item is now low stock and needs notification
       if (InventoryItemModel.isLowStock(item)) {
-        logger.warn('Item is below threshold', { 
-          itemId: item.itemId, 
-          quantity: item.quantity, 
-          threshold: item.lowStockThreshold 
+        logger.warn('Item is below threshold', {
+          itemId: item.itemId,
+          quantity: item.quantity,
+          threshold: item.lowStockThreshold,
         });
-        // TODO: Trigger notification creation (User Story 2)
+        // Trigger notification creation (User Story 2)
+        await this.triggerLowStockNotification(item);
+      } else {
+        // Check if we need to resolve any existing notifications
+        await this.resolveNotificationsIfAboveThreshold(item);
       }
 
       return item;
@@ -147,21 +251,25 @@ export class InventoryService {
     try {
       const item = await InventoryItemModel.adjustQuantity(familyId, itemId, delta, modifiedBy);
 
-      logger.info('Inventory quantity adjusted', { 
-        familyId, 
-        itemId, 
-        delta, 
-        newQuantity: item.quantity 
+      logger.info('Inventory quantity adjusted', {
+        familyId,
+        itemId,
+        delta,
+        newQuantity: item.quantity,
       });
 
       // Check if item is now low stock
       if (InventoryItemModel.isLowStock(item)) {
-        logger.warn('Item is below threshold after adjustment', { 
-          itemId: item.itemId, 
-          quantity: item.quantity, 
-          threshold: item.lowStockThreshold 
+        logger.warn('Item is below threshold after adjustment', {
+          itemId: item.itemId,
+          quantity: item.quantity,
+          threshold: item.lowStockThreshold,
         });
-        // TODO: Trigger notification creation (User Story 2)
+        // Trigger notification creation (User Story 2)
+        await this.triggerLowStockNotification(item);
+      } else {
+        // Check if we need to resolve any existing notifications (quantity increased above threshold)
+        await this.resolveNotificationsIfAboveThreshold(item);
       }
 
       return item;

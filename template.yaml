@@ -402,6 +402,50 @@ Resources:
             Path: /families/{familyId}/inventory/{itemId}
             Method: DELETE
 
+  ##########################################################################
+  #  User Story 2: Low Stock Notifications Functions
+  ##########################################################################
+
+  # GET /families/{familyId}/notifications - List notifications
+  ListNotificationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-notifications-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/listNotifications.handler
+      Description: List all notifications for a family (optionally filtered by status)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !If [HasSESEmail, !Ref SESFromEmail, '']
+      Events:
+        ListNotificationsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/notifications
+            Method: GET
+
+  # POST /families/{familyId}/notifications/{notificationId}/acknowledge - Acknowledge notification
+  AcknowledgeNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-acknowledge-notification-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/acknowledgeNotification.handler
+      Description: Acknowledge a low-stock notification (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !If [HasSESEmail, !Ref SESFromEmail, '']
+      Events:
+        AcknowledgeNotificationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/notifications/{notificationId}/acknowledge
+            Method: POST
+
 Outputs:
   InventoryApiUrl:
     Description: "API Gateway endpoint URL"

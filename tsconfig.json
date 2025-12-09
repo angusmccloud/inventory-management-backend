@@ -54,13 +54,11 @@
     "types": ["node", "jest"]
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "tests/**/*"
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "tests",
-    "**/*.spec.ts",
-    "**/*.test.ts"
+    "dist"
   ]
 }
