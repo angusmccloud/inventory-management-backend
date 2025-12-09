@@ -6,20 +6,17 @@
  * active -> acknowledged (by admin) or active -> resolved (when quantity rises above threshold)
  */
 
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
-  DynamoDBDocumentClient,
   PutCommand,
   GetCommand,
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import { logger } from '../lib/logger';
-import { generateUUID } from '../lib/uuid';
+import { logger } from '../lib/logger.js';
+import { generateUUID } from '../lib/uuid.js';
+import { docClient, getTableName } from '../lib/dynamodb.js';
 
-const client = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(client);
-const TABLE_NAME = process.env['TABLE_NAME'] || 'InventoryManagement';
+const TABLE_NAME = getTableName();
 
 /**
  * Low-stock notification status

@@ -6,7 +6,7 @@
  */
 
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { logger } from '../lib/logger';
+import { logger } from '../lib/logger.js';
 
 const sesClient = new SESClient({});
 

@@ -36,6 +36,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist",
+    "rootDir": "./src",
     "removeComments": true,
     "preserveConstEnums": true,
     
@@ -54,11 +55,13 @@
     "types": ["node", "jest"]
   },
   "include": [
-    "src/**/*",
-    "tests/**/*"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "tests",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }

@@ -6,16 +6,17 @@
  */
 
 import { APIGatewayProxyHandler } from 'aws-lambda';
-import { NotificationService } from '../services/notificationService';
-import { LowStockNotificationStatus } from '../models/notification';
+import { NotificationService } from '../services/notificationService.js';
+import { LowStockNotificationStatus } from '../models/notification.js';
 import {
   successResponse,
   handleError,
   getPathParameter,
   getQueryParameter,
   badRequestResponse,
-} from '../lib/response';
-import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger';
+} from '../lib/response.js';
+import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger.js';
+import { getUserContext, requireFamilyAccess } from '../lib/auth.js';
 
 /**
  * Valid status values for filtering notifications
@@ -36,19 +37,12 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
   logLambdaInvocation('listNotifications', event, context.awsRequestId);
 
   try {
-    // Get authenticated user info from authorizer context
-    const authorizer = event.requestContext.authorizer;
-    if (!authorizer || !authorizer['familyId']) {
-      throw new Error('Authentication required');
-    }
-
-    const userFamilyId = authorizer['familyId'] as string;
+    // Get authenticated user context (supports local development)
+    const userContext = getUserContext(event, logger, true);
     const familyId = getPathParameter(event.pathParameters, 'familyId');
 
     // Ensure user can only access their own family
-    if (familyId !== userFamilyId) {
-      throw new Error('Access denied to this family');
-    }
+    requireFamilyAccess(userContext, familyId);
 
     // Get optional status filter
     const statusParam = getQueryParameter(event.queryStringParameters, 'status');
@@ -76,7 +70,11 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
     logLambdaCompletion('listNotifications', Date.now() - startTime, context.awsRequestId);
 
-    return successResponse(notifications);
+    // Return in the format expected by frontend
+    return successResponse({
+      notifications,
+      total: notifications.length,
+    });
   } catch (error) {
     logger.error('Failed to list notifications', error as Error);
     return handleError(error);
