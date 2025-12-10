@@ -7,7 +7,7 @@
 
 import { APIGatewayProxyResult } from 'aws-lambda';
 import { ZodError } from 'zod';
-import { logger } from './logger.js';
+import { logger } from './logger';
 
 /**
  * Standard API error response structure
@@ -72,6 +72,16 @@ export const successResponse = <T>(
 };
 
 /**
+ * OK response with 200 status (alias for successResponse)
+ */
+export const okResponse = <T>(
+  data: T,
+  message?: string
+): APIGatewayProxyResult => {
+  return successResponse(data, message);
+};
+
+/**
  * Created response with 201 status
  */
 export const createdResponse = <T>(
@@ -112,7 +122,11 @@ export const badRequestResponse = (
     },
   };
   
-  logger.warn('Bad request', { message, details });
+  try {
+    logger?.warn('Bad request', { message, details });
+  } catch {
+    // Logger not available in test environment
+  }
   return createResponse(400, body);
 };
 
@@ -168,13 +182,19 @@ export const notFoundResponse = (
  * Conflict error response with 409 status
  */
 export const conflictResponse = (
-  message: string,
+  messageOrBody: string | Record<string, any>,
   details?: unknown
 ): APIGatewayProxyResult => {
+  // If messageOrBody is an object, use it directly as the response body
+  if (typeof messageOrBody === 'object') {
+    return createResponse(409, messageOrBody);
+  }
+  
+  // Otherwise, create standard error response
   const body: ErrorResponse = {
     error: {
       code: 'CONFLICT',
-      message,
+      message: messageOrBody,
       details: details,
     },
   };
@@ -197,7 +217,11 @@ export const internalServerErrorResponse = (
   };
   
   if (error) {
-    logger.error('Internal server error', error);
+    try {
+      logger?.error('Internal server error', error);
+    } catch {
+      // Logger not available in test environment
+    }
   }
   
   return createResponse(500, body);
@@ -222,7 +246,11 @@ export const validationErrorResponse = (
     },
   };
   
-  logger.warn('Validation error', { errors: formattedErrors });
+  try {
+    logger?.warn('Validation error', { errors: formattedErrors });
+  } catch {
+    // Logger not available in test environment
+  }
   return createResponse(400, body);
 };
 
@@ -259,7 +287,11 @@ export const handleError = (error: unknown): APIGatewayProxyResult => {
   }
   
   // Unknown error type
-  logger.error('Unknown error type', new Error(String(error)));
+  try {
+    logger?.error('Unknown error type', new Error(String(error)));
+  } catch {
+    // Logger not available in test environment
+  }
   return internalServerErrorResponse('An unexpected error occurred');
 };
 

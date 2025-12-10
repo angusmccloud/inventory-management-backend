@@ -156,6 +156,9 @@ Resources:
         SSEEnabled: true
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -590,6 +593,124 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/notifications/{notificationId}/acknowledge
             Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  Shopping List Management Functions (Feature 002)
+  ##########################################################################
+
+  # GET /families/{familyId}/shopping-list - List shopping list items
+  ListShoppingListItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-shopping-list-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/shopping-list/listShoppingListItems.handler
+      Description: List all shopping list items for a family (with optional filters)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListShoppingListApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/shopping-list
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /families/{familyId}/shopping-list - Add item to shopping list
+  AddToShoppingListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-add-to-shopping-list-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/shopping-list/addToShoppingList.handler
+      Description: Add item to shopping list (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        AddToShoppingListApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/shopping-list
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/shopping-list/{shoppingItemId} - Get shopping list item
+  GetShoppingListItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-shopping-list-item-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/shopping-list/getShoppingListItem.handler
+      Description: Get single shopping list item by ID
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetShoppingListItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # PUT /families/{familyId}/shopping-list/{shoppingItemId} - Update shopping list item
+  UpdateShoppingListItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-update-shopping-list-item-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/shopping-list/updateShoppingListItem.handler
+      Description: Update shopping list item details (admin only, optimistic locking)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UpdateShoppingListItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # PATCH /families/{familyId}/shopping-list/{shoppingItemId}/status - Update status
+  UpdateShoppingListItemStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-update-shopping-list-status-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/shopping-list/updateShoppingListItemStatus.handler
+      Description: Toggle shopping list item status (admin only, manages TTL)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UpdateShoppingListItemStatusApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}/status
+            Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # DELETE /families/{familyId}/shopping-list/{shoppingItemId} - Remove from shopping list
+  RemoveFromShoppingListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-remove-from-shopping-list-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/shopping-list/removeFromShoppingList.handler
+      Description: Remove item from shopping list (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RemoveFromShoppingListApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}
+            Method: DELETE
             Auth:
               Authorizer: CognitoAuthorizer
 

@@ -60,7 +60,7 @@ export default {
   },
   
   // Setup and teardown
-  setupFilesAfterEnv: [],
+  setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.ts'],
   
   // Test timeout
   testTimeout: 10000,
