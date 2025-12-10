@@ -20,6 +20,12 @@ Globals:
         NODE_ENV: !Ref Environment
         LOG_LEVEL: INFO
     Tracing: Active
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: "'*'"
+      MaxAge: "'3600'"
 
 Parameters:
   Environment:
@@ -31,21 +37,111 @@ Parameters:
       - prod
     Description: Deployment environment
   
-  CognitoUserPoolArn:
-    Type: String
-    Default: ""
-    Description: ARN of the Cognito User Pool for authentication (leave empty for initial deployment)
-  
   SESFromEmail:
     Type: String
     Default: ""
     Description: Verified email address for sending notifications via SES
 
 Conditions:
-  HasCognitoUserPool: !Not [!Equals [!Ref CognitoUserPoolArn, ""]]
   HasSESEmail: !Not [!Equals [!Ref SESFromEmail, ""]]
 
 Resources:
+  ##########################################################################
+  #  Cognito User Pool - Authentication
+  ##########################################################################
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-users-${Environment}'
+      
+      # Allow sign-in with email (email becomes the username)
+      UsernameAttributes:
+        - email
+      
+      # Auto-verify email addresses
+      AutoVerifiedAttributes:
+        - email
+      
+      # Email verification message
+      EmailVerificationMessage: 'Your Family Inventory verification code is {####}'
+      EmailVerificationSubject: 'Verify your Family Inventory account'
+      
+      # Password policy
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      
+      # User attributes schema
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      
+      # Account recovery
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      
+      # User pool settings
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      
+      UserPoolTags:
+        Environment: !Ref Environment
+        Application: FamilyInventoryManagement
+
+  # User Pool Client for the frontend application
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${AWS::StackName}-client-${Environment}'
+      UserPoolId: !Ref UserPool
+      
+      # Token validity
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      
+      # OAuth flows
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      
+      # Prevent client secret (for public clients like web/mobile apps)
+      GenerateSecret: false
+      
+      # Enable token revocation
+      EnableTokenRevocation: true
+      
+      # Prevent user existence errors for security
+      PreventUserExistenceErrors: ENABLED
+      
+      # Read/write attributes
+      ReadAttributes:
+        - email
+        - email_verified
+        - name
+      WriteAttributes:
+        - email
+        - name
+
   ##########################################################################
   #  DynamoDB Table - Single Table Design
   ##########################################################################
@@ -163,16 +259,11 @@ Resources:
     Properties:
       Name: !Sub '${AWS::StackName}-api-${Environment}'
       StageName: !Ref Environment
-      Cors:
-        AllowOrigin: "'*'"
-        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-        MaxAge: "'3600'"
       Auth:
         DefaultAuthorizer: CognitoAuthorizer
         Authorizers:
           CognitoAuthorizer:
-            UserPoolArn: !If [HasCognitoUserPool, !Ref CognitoUserPoolArn, !Ref AWS::NoValue]
+            UserPoolArn: !GetAtt UserPool.Arn
             Identity:
               Header: Authorization
       GatewayResponses:
@@ -181,11 +272,27 @@ Resources:
           ResponseParameters:
             Headers:
               Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
         ACCESS_DENIED:
           StatusCode: 403
           ResponseParameters:
             Headers:
               Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
       TracingEnabled: true
       Tags:
         Environment: !Ref Environment
@@ -211,13 +318,10 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /health
             Method: GET
-            Auth:
-              Authorizer: NONE
 
   # Lambda Authorizer Function
   AuthorizerFunction:
     Type: AWS::Serverless::Function
-    Condition: HasCognitoUserPool
     Properties:
       FunctionName: !Sub '${AWS::StackName}-authorizer-${Environment}'
       CodeUri: dist/
@@ -226,7 +330,7 @@ Resources:
       Role: !GetAtt LambdaExecutionRole.Arn
       Environment:
         Variables:
-          COGNITO_USER_POOL_ARN: !Ref CognitoUserPoolArn
+          COGNITO_USER_POOL_ARN: !GetAtt UserPool.Arn
 
   ##########################################################################
   #  User Story 1: Family and Inventory Management Functions
@@ -248,6 +352,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families
             Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # GET /user/families - List all families user is a member of
   ListUserFamiliesFunction:
@@ -265,6 +371,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /user/families
             Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # GET /families/{familyId} - Get family details
   GetFamilyFunction:
@@ -282,6 +390,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}
             Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # PUT /families/{familyId} - Update family details
   UpdateFamilyFunction:
@@ -299,6 +409,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}
             Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # POST /families/{familyId}/inventory - Create inventory item
   CreateInventoryItemFunction:
@@ -316,6 +428,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/inventory
             Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # GET /families/{familyId}/inventory - List inventory items
   ListInventoryItemsFunction:
@@ -333,6 +447,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/inventory
             Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # GET /families/{familyId}/inventory/{itemId} - Get single inventory item
   GetInventoryItemFunction:
@@ -350,6 +466,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/inventory/{itemId}
             Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # PUT /families/{familyId}/inventory/{itemId} - Update inventory item
   UpdateInventoryItemFunction:
@@ -367,6 +485,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/inventory/{itemId}
             Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # PATCH /families/{familyId}/inventory/{itemId}/quantity - Adjust inventory quantity
   AdjustInventoryQuantityFunction:
@@ -384,6 +504,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/inventory/{itemId}/quantity
             Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # POST /families/{familyId}/inventory/{itemId}/archive - Archive inventory item
   ArchiveInventoryItemFunction:
@@ -401,6 +523,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/inventory/{itemId}/archive
             Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # DELETE /families/{familyId}/inventory/{itemId} - Delete inventory item (not implemented)
   DeleteInventoryItemFunction:
@@ -418,6 +542,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/inventory/{itemId}
             Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   ##########################################################################
   #  User Story 2: Low Stock Notifications Functions
@@ -442,6 +568,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/notifications
             Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # POST /families/{familyId}/notifications/{notificationId}/acknowledge - Acknowledge notification
   AcknowledgeNotificationFunction:
@@ -462,6 +590,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/notifications/{notificationId}/acknowledge
             Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
 
 Outputs:
   InventoryApiUrl:
@@ -469,6 +599,24 @@ Outputs:
     Value: !Sub "https://${InventoryApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/"
     Export:
       Name: !Sub "${AWS::StackName}-ApiUrl"
+  
+  UserPoolId:
+    Description: "Cognito User Pool ID"
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+  
+  UserPoolArn:
+    Description: "Cognito User Pool ARN"
+    Value: !GetAtt UserPool.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolArn"
+  
+  UserPoolClientId:
+    Description: "Cognito User Pool Client ID"
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
   
   InventoryTableName:
     Description: "DynamoDB table name"

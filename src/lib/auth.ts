@@ -30,47 +30,72 @@ export interface UserContext {
  * @returns User context with memberId, email, name, and optional familyId/role
  * @throws Error if authentication is missing in production
  */
+/**
+ * Decode JWT payload (without verification - already verified by Cognito)
+ */
+const decodeJWT = (token: string): Record<string, unknown> => {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT token');
+  }
+  
+  const payload = parts[1];
+  if (!payload) {
+    throw new Error('Invalid JWT payload');
+  }
+  
+  const decoded = Buffer.from(payload, 'base64').toString('utf8');
+  return JSON.parse(decoded) as Record<string, unknown>;
+};
+
 export const getUserContext = (
   event: APIGatewayProxyEvent,
   logger?: Logger,
   requireFamilyId = false
 ): UserContext => {
-  const authorizer = event.requestContext.authorizer;
-  
   // **DEVELOPMENT MODE BYPASS** - Use mock auth in local development
-  if (!authorizer || !authorizer['memberId']) {
-    if (process.env['AWS_SAM_LOCAL'] === 'true') {
-      // Use mock user for local development
-      // Note: familyId is not set here because the user can access any family in local mode
-      // Family access checks are bypassed when AWS_SAM_LOCAL=true
-      const mockContext: UserContext = {
-        memberId: 'mock-user-id',
-        email: 'connort@gmail.com',
-        name: 'Test User',
-        role: 'admin', // Mock user has admin access in local development
-      };
-      
-      logger?.warn('Using mock authentication for local development');
-      return mockContext;
-    }
+  if (process.env['AWS_SAM_LOCAL'] === 'true') {
+    const mockContext: UserContext = {
+      memberId: 'mock-user-id',
+      email: 'connort@gmail.com',
+      name: 'Test User',
+      role: 'admin',
+    };
     
+    logger?.warn('Using mock authentication for local development');
+    return mockContext;
+  }
+  
+  // Extract JWT from Authorization header
+  const authHeader = event.headers?.['Authorization'] || event.headers?.['authorization'];
+  if (!authHeader) {
     throw new Error('Authentication required');
   }
   
-  // Extract user context from authorizer
-  const userContext: UserContext = {
-    memberId: authorizer['memberId'] as string,
-    email: authorizer['email'] as string,
-    name: authorizer['name'] as string,
-  };
-  
-  // Add optional fields if present
-  if (authorizer['familyId']) {
-    userContext.familyId = authorizer['familyId'] as string;
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token) {
+    throw new Error('Authentication required');
   }
   
-  if (authorizer['role']) {
-    userContext.role = authorizer['role'] as string;
+  // Decode JWT (already validated by Cognito authorizer)
+  const claims = decodeJWT(token);
+  
+  // Extract user context from JWT claims
+  const email = claims['email'] as string;
+  const userContext: UserContext = {
+    memberId: claims['sub'] as string || claims['cognito:username'] as string,
+    email: email,
+    // Use name from JWT, or fall back to email local part if not provided
+    name: (claims['name'] as string) || email.split('@')[0] || 'User',
+  };
+  
+  // Add optional fields if present (for future use when stored in DynamoDB)
+  if (claims['custom:familyId']) {
+    userContext.familyId = claims['custom:familyId'] as string;
+  }
+  
+  if (claims['custom:role']) {
+    userContext.role = claims['custom:role'] as string;
   }
   
   // Validate required fields
@@ -82,18 +107,29 @@ export const getUserContext = (
 };
 
 /**
- * Verify user has admin role
+ * Verify user has admin role for the specified family
  * 
- * @param userContext - User context with role
- * @throws Error if user is not an admin
+ * @param userContext - User context with memberId
+ * @param familyId - Family ID to check admin role for
+ * @throws Error if user is not an admin of this family
  */
-export const requireAdmin = (userContext: UserContext): void => {
+export const requireAdmin = async (userContext: UserContext, familyId: string): Promise<void> => {
   // In local development, skip role check (mock user has full access)
   if (process.env['AWS_SAM_LOCAL'] === 'true') {
     return;
   }
   
-  if (userContext.role !== 'admin') {
+  // Import MemberModel dynamically to avoid circular dependencies
+  const { MemberModel } = await import('../models/member.js');
+  
+  // Get member record from DynamoDB to check role
+  const member = await MemberModel.getById(familyId, userContext.memberId);
+  
+  if (!member) {
+    throw new Error('Access denied to this family');
+  }
+  
+  if (member.role !== 'admin') {
     throw new Error('Admin role required for this operation');
   }
 };
@@ -101,18 +137,32 @@ export const requireAdmin = (userContext: UserContext): void => {
 /**
  * Verify user has access to specified family
  * 
- * @param userContext - User context with familyId
+ * NOTE: This is a simplified check for now. In production, you should:
+ * 1. Query DynamoDB to verify user is a member of this family
+ * 2. Cache the result to avoid repeated queries
+ * 
+ * For MVP, we'll allow access if the user is authenticated.
+ * The real check happens when querying data (user can only see their own families/items).
+ * 
+ * @param userContext - User context with memberId
  * @param familyId - Family ID to check access for
- * @throws Error if user does not have access to family
+ * @throws Error if user is not a member of this family
  */
-export const requireFamilyAccess = (userContext: UserContext, familyId: string): void => {
-  // In local development, skip family access check (single user has access to all families)
+export const requireFamilyAccess = async (userContext: UserContext, familyId: string): Promise<void> => {
+  // In local development, skip family access check
   if (process.env['AWS_SAM_LOCAL'] === 'true') {
     return;
   }
   
-  if (userContext.familyId !== familyId) {
+  const { MemberModel } = await import('../models/member.js');
+  const member = await MemberModel.getById(familyId, userContext.memberId);
+  
+  if (!member || member.status !== 'active') {
     throw new Error('Access denied to this family');
   }
+  
+  // Placeholder - actual membership check would happen here via DynamoDB query
+  void userContext;
+  void familyId;
 };
 
