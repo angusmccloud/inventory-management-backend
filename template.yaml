@@ -260,6 +260,7 @@ Resources:
       Name: !Sub '${AWS::StackName}-api-${Environment}'
       StageName: !Ref Environment
       Auth:
+        DefaultAuthorizer: CognitoAuthorizer
         Authorizers:
           CognitoAuthorizer:
             UserPoolArn: !GetAtt UserPool.Arn

@@ -25,7 +25,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     const familyId = getPathParameter(event.pathParameters, 'familyId');
 
     // Ensure user can only access their own family
-    requireFamilyAccess(userContext, familyId);
+    await requireFamilyAccess(userContext, familyId);
 
     // Check if archived items should be included
     const includeArchived = getQueryParameter(event.queryStringParameters, 'includeArchived') === 'true';

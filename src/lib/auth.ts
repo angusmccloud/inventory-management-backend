@@ -146,16 +146,20 @@ export const requireAdmin = async (userContext: UserContext, familyId: string): 
  * 
  * @param userContext - User context with memberId
  * @param familyId - Family ID to check access for
+ * @throws Error if user is not a member of this family
  */
-export const requireFamilyAccess = (userContext: UserContext, familyId: string): void => {
+export const requireFamilyAccess = async (userContext: UserContext, familyId: string): Promise<void> => {
   // In local development, skip family access check
   if (process.env['AWS_SAM_LOCAL'] === 'true') {
     return;
   }
   
-  // TODO: Add DynamoDB query to verify user is member of this family
-  // For now, we trust that the authenticated user has access
-  // The data queries will naturally filter by user membership
+  const { MemberModel } = await import('../models/member.js');
+  const member = await MemberModel.getById(familyId, userContext.memberId);
+  
+  if (!member || member.status !== 'active') {
+    throw new Error('Access denied to this family');
+  }
   
   // Placeholder - actual membership check would happen here via DynamoDB query
   void userContext;

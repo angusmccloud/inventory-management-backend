@@ -27,7 +27,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     const itemId = getPathParameter(event.pathParameters, 'itemId');
 
     // Ensure user can only access their own family
-    requireFamilyAccess(userContext, familyId);
+    await requireFamilyAccess(userContext, familyId);
 
     // Only admins can update inventory items
     await requireAdmin(userContext, familyId);

@@ -42,7 +42,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     const familyId = getPathParameter(event.pathParameters, 'familyId');
 
     // Ensure user can only access their own family
-    requireFamilyAccess(userContext, familyId);
+    await requireFamilyAccess(userContext, familyId);
 
     // Get optional status filter
     const statusParam = getQueryParameter(event.queryStringParameters, 'status');

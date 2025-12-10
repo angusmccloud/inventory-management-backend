@@ -35,7 +35,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     const notificationId = getPathParameter(event.pathParameters, 'notificationId');
 
     // Ensure user can only access their own family
-    requireFamilyAccess(userContext, familyId);
+    await requireFamilyAccess(userContext, familyId);
 
     // Only admins can acknowledge notifications
     await requireAdmin(userContext, familyId);
