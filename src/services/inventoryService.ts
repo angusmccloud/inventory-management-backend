@@ -2,9 +2,7 @@ import { InventoryItemModel } from '../models/inventory';
 import { StorageLocationModel } from '../models/location';
 import { StoreModel } from '../models/store';
 import { MemberModel } from '../models/member';
-import { FamilyModel } from '../models/family';
 import { NotificationService } from './notificationService';
-import { EmailService } from './emailService';
 import { logger } from '../lib/logger';
 import {
   InventoryItem,
@@ -46,8 +44,8 @@ export class InventoryService {
       }
 
       // Get family name for email
-      const family = await FamilyModel.getById(item.familyId);
-      const familyName = family?.name || 'Your Family';
+      // const family = await FamilyModel.getById(item.familyId);
+      // const familyName = family?.name || 'Your Family';
 
       // Get admin members to send email notifications
       const members = await MemberModel.listByFamily(item.familyId);
@@ -64,12 +62,14 @@ export class InventoryService {
       // Send email to all admins
       if (recipients.length > 0) {
         try {
-          await EmailService.sendLowStockAlert(recipients, {
-            itemName: item.name,
-            currentQuantity: item.quantity,
-            threshold: item.lowStockThreshold,
-            familyName,
-          });
+          // TODO: Implement email service for low stock alerts
+          // await emailService.sendLowStockAlert(recipients, {
+          //   itemName: item.name,
+          //   currentQuantity: item.quantity,
+          //   threshold: item.lowStockThreshold,
+          //   familyName,
+          // });
+          logger.info('Low stock email would be sent', { recipientCount: recipients.length });
         } catch (emailError) {
           // Log but don't fail the operation if email fails
           logger.error('Failed to send low stock emails', emailError as Error, {

@@ -22,6 +22,7 @@ export interface BaseEntity {
 export type EntityType = 
   | 'Family' 
   | 'Member' 
+  | 'Invitation'
   | 'InventoryItem' 
   | 'StorageLocation' 
   | 'Store' 
@@ -84,6 +85,7 @@ export interface Member extends BaseEntity {
   name: string;
   role: MemberRole;
   status: MemberStatus;
+  version: number; // Optimistic locking version (starts at 1)
   entityType: 'Member';
   GSI1PK?: string; // MEMBER#{memberId}
   GSI1SK?: string; // FAMILY#{familyId}

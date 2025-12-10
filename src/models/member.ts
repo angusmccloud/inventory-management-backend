@@ -34,6 +34,7 @@ export class MemberModel {
       name: input.name,
       role: input.role,
       status: 'active',
+      version: 1, // Initialize version for optimistic locking
       entityType: 'Member',
       createdAt: now,
       updatedAt: now,
@@ -184,6 +185,95 @@ export class MemberModel {
       return result.Attributes as Member;
     } catch (error) {
       logger.error('Failed to update member', error as Error, { familyId, memberId, updates });
+      throw error;
+    }
+  }
+
+  /**
+   * Update member with optimistic locking
+   */
+  static async updateWithVersion(
+    familyId: string,
+    memberId: string,
+    updates: Partial<Pick<Member, 'name' | 'email' | 'role' | 'status'>>,
+    expectedVersion: number
+  ): Promise<Member> {
+    const now = new Date().toISOString();
+
+    try {
+      const updateExpression: string[] = ['#updatedAt = :updatedAt', '#version = #version + :one'];
+      const expressionAttributeNames: Record<string, string> = {
+        '#updatedAt': 'updatedAt',
+        '#version': 'version',
+      };
+      const expressionAttributeValues: Record<string, unknown> = {
+        ':updatedAt': now,
+        ':one': 1,
+        ':expectedVersion': expectedVersion,
+      };
+
+      if (updates.name !== undefined) {
+        updateExpression.push('#name = :name');
+        expressionAttributeNames['#name'] = 'name';
+        expressionAttributeValues[':name'] = updates.name;
+      }
+
+      if (updates.email !== undefined) {
+        updateExpression.push('#email = :email');
+        expressionAttributeNames['#email'] = 'email';
+        expressionAttributeValues[':email'] = updates.email;
+      }
+
+      if (updates.role !== undefined) {
+        updateExpression.push('#role = :role');
+        expressionAttributeNames['#role'] = 'role';
+        expressionAttributeValues[':role'] = updates.role;
+      }
+
+      if (updates.status !== undefined) {
+        updateExpression.push('#status = :status');
+        expressionAttributeNames['#status'] = 'status';
+        expressionAttributeValues[':status'] = updates.status;
+      }
+
+      const keys = KeyBuilder.member(familyId, memberId);
+      const result = await docClient.send(
+        new UpdateCommand({
+          TableName: TABLE_NAME,
+          Key: { PK: keys.PK, SK: keys.SK },
+          UpdateExpression: `SET ${updateExpression.join(', ')}`,
+          ExpressionAttributeNames: expressionAttributeNames,
+          ExpressionAttributeValues: expressionAttributeValues,
+          ConditionExpression: 'attribute_exists(PK) AND #version = :expectedVersion',
+          ReturnValues: 'ALL_NEW',
+        })
+      );
+
+      if (!result.Attributes) {
+        throw new Error('Member not found');
+      }
+
+      logger.info('Member updated with version check', { familyId, memberId, expectedVersion, newVersion: expectedVersion + 1 });
+      return result.Attributes as Member;
+    } catch (error) {
+      if ((error as Error).name === 'ConditionalCheckFailedException') {
+        logger.warn('Version conflict detected', { familyId, memberId, expectedVersion });
+        throw new Error('VERSION_CONFLICT');
+      }
+      logger.error('Failed to update member with version', error as Error, { familyId, memberId, updates });
+      throw error;
+    }
+  }
+
+  /**
+   * Count active admin members in a family
+   */
+  static async countAdmins(familyId: string): Promise<number> {
+    try {
+      const members = await this.listByFamily(familyId);
+      return members.filter((m) => m.role === 'admin' && m.status === 'active').length;
+    } catch (error) {
+      logger.error('Failed to count admins', error as Error, { familyId });
       throw error;
     }
   }
