@@ -35,6 +35,11 @@ Parameters:
     Type: String
     Default: ""
     Description: Verified email address for sending notifications via SES
+  
+  FrontendUrl:
+    Type: String
+    Default: "http://localhost:3000"
+    Description: Frontend application URL for invitation links
 
 Conditions:
   HasSESEmail: !Not [!Equals [!Ref SESFromEmail, ""]]
@@ -247,6 +252,34 @@ Resources:
                 Condition:
                   StringEquals:
                     'ses:FromAddress': !If [HasSESEmail, !Ref SESFromEmail, '*']
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/inventory-mgmt/${Environment}/invitation-hmac-secret-*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/inventory-mgmt/${Environment}/*'
+        - PolicyName: CognitoUserManagement
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cognito-idp:AdminCreateUser'
+                  - 'cognito-idp:AdminSetUserPassword'
+                  - 'cognito-idp:AdminGetUser'
+                  - 'cognito-idp:AdminUserGlobalSignOut'
+                Resource: !GetAtt UserPool.Arn
 
   ##########################################################################
   #  API Gateway - REST API
@@ -732,6 +765,193 @@ Resources:
           Properties:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/shopping-list/{shoppingItemId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  User Story 4: Family Member Management Functions (Feature 003)
+  ##########################################################################
+
+  # POST /families/{familyId}/invitations - Create invitation
+  CreateInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-create-invitation-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/createInvitation.handler
+      Description: Create and send member invitation (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          FRONTEND_URL: !Ref FrontendUrl
+          INVITATION_HMAC_SECRET_NAME: !Sub '/inventory-mgmt/${Environment}/invitation-hmac-secret'
+          INVITATION_EXPIRATION_SECONDS: '604800'
+      Events:
+        CreateInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/invitations
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/invitations - List invitations
+  ListInvitationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-invitations-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/listInvitations.handler
+      Description: List family invitations (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListInvitationsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/invitations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/invitations/{invitationId} - Get invitation
+  GetInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-invitation-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/getInvitation.handler
+      Description: Get invitation details (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/invitations/{invitationId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # DELETE /families/{familyId}/invitations/{invitationId} - Revoke invitation
+  RevokeInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-revoke-invitation-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/revokeInvitation.handler
+      Description: Revoke pending invitation (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RevokeInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/invitations/{invitationId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /invitations/accept - Accept invitation (public endpoint)
+  AcceptInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-accept-invitation-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/acceptInvitation.handler
+      Description: Accept invitation and create member account (public)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          INVITATION_HMAC_SECRET_NAME: !Sub '/inventory-mgmt/${Environment}/invitation-hmac-secret'
+      Events:
+        AcceptInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /invitations/accept
+            Method: POST
+            Auth:
+              Authorizer: NONE
+
+  # GET /families/{familyId}/members - List members
+  ListMembersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-members-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/members/listMembers.handler
+      Description: List family members
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListMembersApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/members
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/members/{memberId} - Get member
+  GetMemberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-member-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/members/getMember.handler
+      Description: Get member details
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetMemberApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/members/{memberId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # PATCH /families/{familyId}/members/{memberId} - Update member
+  UpdateMemberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-update-member-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/members/updateMember.handler
+      Description: Update member role or name (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UpdateMemberApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/members/{memberId}
+            Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # DELETE /families/{familyId}/members/{memberId} - Remove member
+  RemoveMemberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-remove-member-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/members/removeMember.handler
+      Description: Remove member from family (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+      Events:
+        RemoveMemberApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/members/{memberId}
             Method: DELETE
             Auth:
               Authorizer: CognitoAuthorizer

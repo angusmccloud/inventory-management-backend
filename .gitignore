@@ -6,6 +6,7 @@ pnpm-lock.yaml
 
 # Build outputs
 dist/
+!dist/package.json
 build/
 *.js
 *.js.map

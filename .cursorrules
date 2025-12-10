@@ -1,0 +1,190 @@
+# ATL-Inventory Context Rules for Cursor
+
+## MCP Integration
+
+This file is a thin adapter that references canonical context sources.
+**DO NOT duplicate content here** - reference the source files instead.
+
+---
+
+## 🔴 Critical Context (Always Load)
+
+Before ANY implementation, load and understand:
+
+### 1. Constitution (NON-NEGOTIABLE Authority)
+**Location**: `@file:../../../inventory-management-context/prompts/constitution.md`
+
+The constitution defines:
+- Architecture principles
+- TypeScript strict mode requirements
+- Testing requirements (Jest + 80% coverage)
+- DynamoDB patterns
+- Security standards
+- Performance guidelines
+
+**Ask yourself**: What does the constitution say about this?
+
+### 2. Agent Guidance (Critical Gotchas)
+**Location**: `@file:../../../inventory-management-context/AGENTS.md`
+
+Contains:
+- AI-specific patterns and conventions
+- Critical gotchas to avoid
+- Feature branch naming (`###-feature-name`)
+- SpecKit workflow
+- Code patterns
+
+**Ask yourself**: What are the AGENTS.md gotchas for this feature?
+
+### 3. Onboarding (Setup & Workflow)
+**Location**: `@file:../../../inventory-management-context/ONBOARDING.md`
+
+Reference for:
+- Project structure
+- Setup instructions
+- Development workflow
+- Common development tasks
+
+---
+
+## 🎯 Feature-Specific Context (Load When Relevant)
+
+### When Working with Database:
+**Load**: `@file:../../../inventory-management-backend/src/types/entities.ts`
+- Entity definitions
+- KeyBuilder helpers (ALWAYS use these)
+- QueryPatterns for common queries
+- Single-table design patterns
+
+**Rules**:
+- ✅ Use `KeyBuilder` for key construction
+- ✅ Use `QueryPatterns` for queries
+- ❌ Never manually construct PK/SK
+- ❌ No migrations (schema is in code)
+
+### When Creating API Handlers:
+**Load**: `@file:../../../inventory-management-backend/src/lib/response.ts`
+**Load**: `@file:../../../inventory-management-backend/src/lib/logger.ts`
+- Response formatting patterns
+- Error handling patterns
+- Structured logging
+
+**Rules**:
+- ✅ Use `successResponse`, `errorResponse`, etc.
+- ✅ Use `logger` for structured logging
+- ❌ No console.log statements
+
+### When Working with DynamoDB Client:
+**Load**: `@file:../../../inventory-management-backend/src/lib/dynamodb.ts`
+- Document Client configuration
+- Error handling
+- Table name management
+
+---
+
+## 📋 Implementation Checklist
+
+Before writing ANY code:
+
+- [ ] Read constitution requirements for this feature type
+- [ ] Check AGENTS.md for relevant gotchas
+- [ ] Review existing patterns in codebase
+- [ ] Identify which entities.ts patterns to use
+- [ ] Confirm testing strategy (unit vs integration)
+- [ ] Verify response/logging patterns
+
+---
+
+## 🚨 Mandatory Rules (Constitution)
+
+### TypeScript
+- ✅ Strict mode enabled
+- ✅ No implicit `any` types
+- ✅ Explicit types everywhere
+
+### Testing
+- ✅ Test-first development
+- ✅ Unit tests with mocks
+- ✅ Integration tests for DynamoDB
+- ✅ 80% coverage on critical paths
+- ✅ Use Jest + aws-sdk-client-mock
+
+### DynamoDB
+- ✅ Use KeyBuilder from entities.ts
+- ✅ Use QueryPatterns for queries
+- ✅ Single-table design
+- ❌ No migrations
+- ❌ No manual key construction
+
+### Code Style
+- ✅ ES modules (`.js` extensions in imports)
+- ✅ Async/await (no callbacks)
+- ✅ Proper error handling
+- ✅ Structured logging
+
+---
+
+## 💡 Context Questions to Ask
+
+When implementing a feature:
+
+1. **"What does the constitution say?"**
+   - Check architecture principles
+   - Verify testing requirements
+   - Confirm standards
+
+2. **"What are the gotchas?"**
+   - Review AGENTS.md
+   - Check for feature-specific warnings
+   - Look for common mistakes
+
+3. **"What patterns exist?"**
+   - Review entities.ts for data patterns
+   - Check response.ts for API patterns
+   - Look at existing handlers
+
+4. **"How should this be tested?"**
+   - Unit tests: Mock DynamoDB
+   - Integration tests: DynamoDB Local
+   - 80% coverage requirement
+
+---
+
+## 🔄 Context Priority
+
+When conflicts arise, priority order:
+
+1. **Constitution** (HIGHEST - non-negotiable)
+2. **AGENTS.md** (Critical guidance)
+3. **Existing code patterns** (Follow what works)
+4. **Specifications** (Feature requirements)
+
+---
+
+## 📝 Example Workflow
+
+```
+User: "Create endpoint to add inventory item"
+
+AI Process:
+1. Load constitution → Check testing, architecture requirements
+2. Load AGENTS.md → Check for DynamoDB/API gotchas
+3. Load entities.ts → Find InventoryItem entity, KeyBuilder
+4. Load response.ts → Find response patterns
+5. Review existing handlers → Follow established patterns
+6. Implement with:
+   - KeyBuilder for keys
+   - Response helpers for output
+   - Structured logging
+   - Proper error handling
+7. Create unit tests (mocked)
+8. Create integration tests (DynamoDB Local)
+9. Verify 80% coverage
+```
+
+---
+
+**MCP Version**: 1.0.0
+**Last Updated**: 2025-12-09
+**Canonical Sources**: ../../../inventory-management-context/
+

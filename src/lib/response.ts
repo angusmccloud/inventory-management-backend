@@ -57,18 +57,66 @@ const createResponse = (
 };
 
 /**
- * Success response with 200 status
+ * Generic success response with status code
  */
 export const successResponse = <T>(
-  data: T,
+  statusCodeOrData: number | T,
+  dataOrMessage?: T | string,
   message?: string
 ): APIGatewayProxyResult => {
+  // Overload 1: successResponse(data) - for backward compatibility
+  if (typeof statusCodeOrData !== 'number') {
+    const body: SuccessResponse<T> = {
+      data: statusCodeOrData,
+    };
+    return createResponse(200, body);
+  }
+
+  // Overload 2: successResponse(statusCode, data, message?)
+  const statusCode = statusCodeOrData as number;
+  const data = dataOrMessage as T;
+
+  // Handle 204 No Content separately
+  if (statusCode === 204) {
+    return {
+      statusCode: 204,
+      headers: corsHeaders,
+      body: '',
+    };
+  }
+
   const body: SuccessResponse<T> = {
     data,
     ...(message && { message }),
   };
   
-  return createResponse(200, body);
+  return createResponse(statusCode, body);
+};
+
+/**
+ * Generic error response
+ */
+export const errorResponse = (
+  statusCode: number,
+  code: string,
+  message: string,
+  details?: unknown,
+  additionalData?: Record<string, unknown>
+): APIGatewayProxyResult => {
+  const body: Record<string, any> = {
+    error: code,
+    message,
+  };
+  
+  if (details) {
+    body['details'] = details;
+  }
+  
+  if (additionalData) {
+    Object.assign(body, additionalData);
+  }
+
+  return createResponse(statusCode, body);
 };
 
 /**
