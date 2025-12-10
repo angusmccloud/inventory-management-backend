@@ -596,6 +596,28 @@ Resources:
             Auth:
               Authorizer: CognitoAuthorizer
 
+  # POST /families/{familyId}/notifications/{notificationId}/resolve - Resolve notification
+  ResolveNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-resolve-notification-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/resolveNotification.handler
+      Description: Resolve a low-stock notification (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !If [HasSESEmail, !Ref SESFromEmail, '']
+      Events:
+        ResolveNotificationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/notifications/{notificationId}/resolve
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
   ##########################################################################
   #  Shopping List Management Functions (Feature 002)
   ##########################################################################
