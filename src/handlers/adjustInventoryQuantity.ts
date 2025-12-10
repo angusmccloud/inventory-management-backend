@@ -22,7 +22,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
   try {
     // Get authenticated user context (supports local development)
-    const userContext = getUserContext(event, logger, true);
+    const userContext = getUserContext(event, logger);
     const familyId = getPathParameter(event.pathParameters, 'familyId');
     const itemId = getPathParameter(event.pathParameters, 'itemId');
 
@@ -30,7 +30,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     requireFamilyAccess(userContext, familyId);
 
     // Only admins can adjust inventory quantities
-    requireAdmin(userContext);
+    await requireAdmin(userContext, familyId);
 
     // Parse and validate request body
     const body = parseJsonBody(event.body);

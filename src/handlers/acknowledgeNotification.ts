@@ -30,7 +30,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
   try {
     // Get authenticated user context (supports local development)
-    const userContext = getUserContext(event, logger, true);
+    const userContext = getUserContext(event, logger);
     const familyId = getPathParameter(event.pathParameters, 'familyId');
     const notificationId = getPathParameter(event.pathParameters, 'notificationId');
 
@@ -38,7 +38,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     requireFamilyAccess(userContext, familyId);
 
     // Only admins can acknowledge notifications
-    requireAdmin(userContext);
+    await requireAdmin(userContext, familyId);
 
     // Acknowledge the notification
     const notification = await NotificationService.acknowledgeNotification(
