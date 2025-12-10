@@ -127,7 +127,7 @@ export async function sendInvitationEmail(params: {
 
   // Build invitation link
   const frontendUrl = process.env['FRONTEND_URL'] || 'http://localhost:3000';
-  const invitationLink = `${frontendUrl}/invite/${invitationToken}`;
+  const invitationLink = `${frontendUrl}/accept-invitation?token=${invitationToken}`;
 
   // Format expiration date
   const expirationDate = new Date(expiresAt).toLocaleDateString('en-US', {
