@@ -20,12 +20,6 @@ Globals:
         NODE_ENV: !Ref Environment
         LOG_LEVEL: INFO
     Tracing: Active
-  Api:
-    Cors:
-      AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-      AllowOrigin: "'*'"
-      MaxAge: "'3600'"
 
 Parameters:
   Environment:
@@ -262,8 +256,14 @@ Resources:
     Properties:
       Name: !Sub '${AWS::StackName}-api-${Environment}'
       StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'3600'"
       Auth:
         DefaultAuthorizer: CognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
         Authorizers:
           CognitoAuthorizer:
             UserPoolArn: !GetAtt UserPool.Arn
