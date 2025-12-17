@@ -13,7 +13,7 @@ import { revokeInvitation } from '../../services/invitationService';
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
     // Get auth context
-    const authContext = getAuthContext(event);
+    const authContext = await getAuthContext(event);
 
     // Require admin role
     const authError = requireAdmin(authContext);

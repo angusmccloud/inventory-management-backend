@@ -13,7 +13,7 @@ import { getMember } from '../../services/memberService';
 export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   try {
     // Get auth context
-    const authContext = getAuthContext(event);
+    const authContext = await getAuthContext(event);
 
     // Require family membership (any role can view member details)
     const authError = requireFamilyMember(authContext);

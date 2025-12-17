@@ -6,6 +6,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from './logger';
 import { errorResponse } from './response';
+import { getMember } from '../services/memberService';
 
 /**
  * Extract member details from Lambda authorizer context
@@ -20,22 +21,69 @@ export interface AuthContext {
 /**
  * Get auth context from API Gateway event
  */
-export function getAuthContext(event: APIGatewayProxyEvent): AuthContext | null {
+export async function getAuthContext(event: APIGatewayProxyEvent): Promise<AuthContext | null> {
   try {
     const authorizer = event.requestContext.authorizer;
-    
-    if (!authorizer) {
+    const claims = (authorizer?.['claims'] as Record<string, unknown>) || {};
+
+    const memberId =
+      (claims['sub'] as string | undefined) ||
+      (claims['cognito:username'] as string | undefined) ||
+      (authorizer?.['memberId'] as string | undefined);
+    const email =
+      (claims['email'] as string | undefined) ||
+      (authorizer?.['email'] as string | undefined);
+
+    if (!memberId || !email) {
+      logger.warn('Missing basic auth claims', { hasAuthorizer: !!authorizer });
       return null;
     }
 
-    // Extract from Lambda authorizer claims
-    const memberId = authorizer['claims']?.sub || authorizer['memberId'];
-    const familyId = authorizer['familyId'];
-    const role = authorizer['role'];
-    const email = authorizer['claims']?.email || authorizer['email'];
+    let familyId =
+      (authorizer?.['familyId'] as string | undefined) ||
+      (claims['custom:familyId'] as string | undefined) ||
+      '';
+    let role =
+      (authorizer?.['role'] as AuthContext['role'] | undefined) ||
+      (claims['custom:role'] as AuthContext['role'] | undefined) ||
+      null;
 
-    if (!memberId || !familyId || !role || !email) {
-      logger.warn('Incomplete auth context', { authorizer });
+    const pathFamilyId = event.pathParameters?.['familyId'];
+
+    // When Cognito authorizer does not inject family/role context, resolve from DynamoDB using path familyId
+    if ((!familyId || !role) && pathFamilyId) {
+      try {
+        const member = await getMember(pathFamilyId, memberId);
+
+        if (!member) {
+          logger.warn('Member not found for family during auth resolution', {
+            memberId,
+            pathFamilyId,
+          });
+          return null;
+        }
+
+        familyId = member.familyId;
+        role = member.role;
+      } catch (lookupError) {
+        logger.error(
+          'Failed to resolve member from family during auth context build',
+          lookupError as Error,
+          {
+            memberId,
+            pathFamilyId,
+          }
+        );
+        return null;
+      }
+    }
+
+    if (!familyId || !role) {
+      logger.warn('Incomplete auth context after resolution', {
+        memberId,
+        hasFamilyId: !!familyId,
+        hasRole: !!role,
+      });
       return null;
     }
 

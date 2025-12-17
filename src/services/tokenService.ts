@@ -15,12 +15,29 @@ const secretsClient = new SecretsManagerClient({ region: process.env['AWS_REGION
 
 // Cache the HMAC secret in memory to avoid repeated API calls
 let cachedSecret: string | null = null;
+let warnedInlineSecret = false;
 
 /**
  * Get HMAC secret from AWS Secrets Manager (with caching)
  */
 async function getHmacSecret(): Promise<string> {
   if (cachedSecret) {
+    return cachedSecret;
+  }
+
+  // Prefer explicit inline secret for non-production or emergency fallback
+  const inlineSecret =
+    process.env['INVITATION_HMAC_SECRET_VALUE'] ||
+    process.env['INVITATION_HMAC_SECRET'];
+
+  if (inlineSecret) {
+    cachedSecret = inlineSecret;
+
+    if (!warnedInlineSecret) {
+      logger.warn('Using inline invitation HMAC secret from environment variable');
+      warnedInlineSecret = true;
+    }
+
     return cachedSecret;
   }
 

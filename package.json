@@ -13,8 +13,9 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "sam:build": "sam build",
-    "sam:deploy": "sam build && sam deploy --guided",
-    "sam:local": "sam local start-api"
+    "sam:deploy": "sam build && sam deploy",
+    "sam:local": "sam local start-api",
+    "sam:deploy:guided": "sam build && sam deploy --guided"
   },
   "keywords": [
     "inventory",
