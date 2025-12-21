@@ -11,6 +11,28 @@ Serverless backend API for the Family Inventory Management System built with AWS
 - **Email**: Amazon SES
 - **Testing**: Jest with 80% coverage target
 
+## Infrastructure as Code (IaC) Philosophy
+
+**⚠️ CRITICAL: Always Use template.yaml for AWS Configuration**
+
+This project follows an **infrastructure-as-code first** approach:
+
+- ✅ **DO**: Define all AWS resources in `template.yaml`
+- ✅ **DO**: Use SAM parameters for environment-specific configuration
+- ✅ **DO**: Version control all infrastructure changes
+- ❌ **DON'T**: Configure AWS resources manually in the console (except for specific exceptions below)
+- ❌ **DON'T**: Create IAM roles, Lambda functions, or API Gateway routes outside of `template.yaml`
+
+### Acceptable Manual Operations
+
+Manual AWS Console operations are ONLY allowed for:
+1. **SES Domain Verification** - CloudFormation cannot initiate domain verification
+2. **Third-party DNS Configuration** - Namecheap, GoDaddy, etc. DNS record management
+3. **Initial Route 53 Hosted Zone Creation** - One-time setup
+4. **Emergency Troubleshooting** - Must be followed by template.yaml update
+
+All other AWS configurations (Cognito settings, IAM roles, Lambda env vars, API Gateway CORS, etc.) MUST be in `template.yaml`.
+
 ## Prerequisites
 
 - Node.js 24.x or higher

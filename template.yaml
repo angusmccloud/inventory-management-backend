@@ -46,6 +46,33 @@ Conditions:
 
 Resources:
   ##########################################################################
+  #  IAM Role for Cognito to send emails via SES
+  ##########################################################################
+  CognitoSESRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: email.cognito-idp.amazonaws.com
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref AWS::AccountId
+      Policies:
+        - PolicyName: CognitoSESPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ses:SendEmail'
+                  - 'ses:SendRawEmail'
+                Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/inventoryhq.io'
+
+  ##########################################################################
   #  Cognito User Pool - Authentication
   ##########################################################################
   UserPool:
@@ -61,9 +88,17 @@ Resources:
       AutoVerifiedAttributes:
         - email
       
-      # Email verification message
-      EmailVerificationMessage: 'Your Family Inventory verification code is {####}'
-      EmailVerificationSubject: 'Verify your Family Inventory account'
+      # Email configuration - Use SES for email delivery with custom domain
+      EmailConfiguration:
+        EmailSendingAccount: DEVELOPER
+        SourceArn: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/inventoryhq.io'
+        From: !Sub 'Inventory HQ <${SESFromEmail}>'
+        ReplyToEmailAddress: 'support@inventoryhq.io'
+        ConfigurationSet: !Ref AWS::NoValue  # Optional: Add SES configuration set if you have one
+      
+      # Email verification message with updated branding
+      EmailVerificationMessage: 'Your Inventory HQ verification code is {####}'
+      EmailVerificationSubject: 'Verify your Inventory HQ account'
       
       # Password policy
       Policies:
@@ -99,7 +134,7 @@ Resources:
       
       UserPoolTags:
         Environment: !Ref Environment
-        Application: FamilyInventoryManagement
+        Application: InventoryHQ
 
   # User Pool Client for the frontend application
   UserPoolClient:
@@ -111,7 +146,7 @@ Resources:
       # Token validity
       AccessTokenValidity: 1
       IdTokenValidity: 1
-      RefreshTokenValidity: 30
+      RefreshTokenValidity: 365
       TokenValidityUnits:
         AccessToken: hours
         IdToken: hours

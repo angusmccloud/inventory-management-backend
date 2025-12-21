@@ -7,6 +7,7 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { logger } from '../lib/logger';
 import { MemberRole } from '../types/invitation';
+import { getDomainConfig, getFrontendUrl } from '../config/domain';
 
 const sesClient = new SESClient({ region: process.env['AWS_REGION'] || 'us-east-1' });
 const ssmClient = new SSMClient({ region: process.env['AWS_REGION'] || 'us-east-1' });
@@ -67,7 +68,7 @@ function getDefaultTemplate(): string {
 <body>
   <div class="container">
     <h1>You're Invited to Join {{familyName}}</h1>
-    <p>{{inviterName}} has invited you to join their family on Family Inventory Management.</p>
+    <p>{{inviterName}} has invited you to join their family on Inventory HQ.</p>
     <p>You'll be added as a <strong>{{role}}</strong>.</p>
     <p><a href="{{invitationLink}}" class="button">Accept Invitation</a></p>
     <p>This invitation expires on {{expirationDate}}.</p>
@@ -125,9 +126,8 @@ export async function sendInvitationEmail(params: {
 }): Promise<{ messageId: string }> {
   const { toEmail, familyName, inviterName, role, invitationToken, expiresAt } = params;
 
-  // Build invitation link
-  const frontendUrl = process.env['FRONTEND_URL'] || 'http://localhost:3000';
-  const invitationLink = `${frontendUrl}/accept-invitation?token=${invitationToken}`;
+  // Build invitation link using domain configuration
+  const invitationLink = getFrontendUrl(`/accept-invitation?token=${invitationToken}`);
 
   // Format expiration date
   const expirationDate = new Date(expiresAt).toLocaleDateString('en-US', {
@@ -160,7 +160,7 @@ export async function sendInvitationEmail(params: {
     const textBody = `
 You're Invited to Join ${familyName}
 
-${inviterName} has invited you to join their family on Family Inventory Management.
+${inviterName} has invited you to join their family on Inventory HQ.
 
 You'll be added as a ${role}.
 
@@ -171,8 +171,9 @@ This invitation expires on ${expirationDate}.
 If you didn't expect this invitation, you can safely ignore this email.
     `.trim();
 
-    // Get sender email
-    const fromEmail = process.env['SES_FROM_EMAIL'] || 'noreply@inventory-mgmt.example.com';
+    // Get sender email from domain configuration
+    const domainConfig = getDomainConfig();
+    const fromEmail = domainConfig.fromEmail;
 
     // Send email via SES
     const command = new SendEmailCommand({
@@ -182,7 +183,7 @@ If you didn't expect this invitation, you can safely ignore this email.
       },
       Message: {
         Subject: {
-          Data: `You're invited to join ${familyName} on Family Inventory Management`,
+          Data: `You're invited to join ${familyName} on Inventory HQ`,
           Charset: 'UTF-8',
         },
         Body: {
