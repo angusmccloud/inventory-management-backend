@@ -39,6 +39,18 @@ const corsHeaders = {
 };
 
 /**
+ * Security headers (T078)
+ */
+const securityHeaders = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'X-XSS-Protection': '1; mode=block',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Content-Security-Policy': "default-src 'self'",
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+};
+
+/**
  * Create a standardized API Gateway response
  */
 const createResponse = (
@@ -50,6 +62,7 @@ const createResponse = (
     statusCode,
     headers: {
       ...corsHeaders,
+      ...securityHeaders,
       ...additionalHeaders,
     },
     body: JSON.stringify(body),
@@ -311,14 +324,23 @@ export const handleError = (error: unknown): APIGatewayProxyResult => {
     return validationErrorResponse(error);
   }
   
+  // Custom error classes from reference-data module
+  // Check if error has statusCode property (our custom errors)
+  if (error && typeof error === 'object' && 'statusCode' in error && 'toJSON' in error) {
+    const customError = error as { statusCode: number; toJSON: () => Record<string, unknown> };
+    return createResponse(customError.statusCode, {
+      error: customError.toJSON(),
+    });
+  }
+  
   // Standard JavaScript errors
   if (error instanceof Error) {
     // Check for specific error types
-    if (error.message.includes('not found')) {
+    if (error.message.includes('not found') || error.message.includes('NOT_FOUND')) {
       return notFoundResponse();
     }
     
-    if (error.message.includes('already exists')) {
+    if (error.message.includes('already exists') || error.message.includes('DUPLICATE')) {
       return conflictResponse(error.message);
     }
     
@@ -326,8 +348,12 @@ export const handleError = (error: unknown): APIGatewayProxyResult => {
       return unauthorizedResponse(error.message);
     }
     
-    if (error.message.includes('forbidden') || error.message.includes('not authorized')) {
+    if (error.message.includes('FORBIDDEN') || error.message.includes('forbidden') || error.message.includes('not authorized')) {
       return forbiddenResponse(error.message);
+    }
+    
+    if (error.message.includes('VERSION_CONFLICT') || error.message.includes('REFERENCE_EXISTS')) {
+      return conflictResponse(error.message);
     }
     
     // Default to internal server error

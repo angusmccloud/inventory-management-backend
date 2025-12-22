@@ -1,0 +1,54 @@
+/**
+ * DELETE /families/{familyId}/locations/{locationId}
+ * Delete a storage location
+ * Feature: 005-reference-data
+ */
+
+import { APIGatewayProxyHandler } from 'aws-lambda';
+import {
+  noContentResponse,
+  handleError,
+  getPathParameter,
+} from '../../lib/response.js';
+import {
+  createLambdaLogger,
+  logLambdaInvocation,
+  logLambdaCompletion,
+} from '../../lib/logger.js';
+import { getUserContext, requireFamilyAccess, requireAdmin } from '../../lib/auth.js';
+import { deleteStorageLocation } from '../../lib/reference-data/storage-location.service.js';
+
+export const handler: APIGatewayProxyHandler = async (event, context) => {
+  const startTime = Date.now();
+  const logger = createLambdaLogger(context.awsRequestId);
+
+  logLambdaInvocation('deleteStorageLocation', event, context.awsRequestId);
+
+  try {
+    // Get authenticated user context
+    const userContext = getUserContext(event, logger);
+    const familyId = getPathParameter(event.pathParameters, 'familyId');
+    const locationId = getPathParameter(event.pathParameters, 'locationId');
+
+    // Ensure user can only access their own family
+    await requireFamilyAccess(userContext, familyId);
+
+    // Only admins can delete storage locations
+    await requireAdmin(userContext, familyId);
+
+    // Delete storage location
+    await deleteStorageLocation(familyId, userContext, locationId);
+
+    logger.info('Storage location deleted successfully', {
+      locationId,
+      familyId,
+    });
+
+    logLambdaCompletion('deleteStorageLocation', Date.now() - startTime, context.awsRequestId);
+
+    return noContentResponse();
+  } catch (error) {
+    logger.error('Failed to delete storage location', error as Error);
+    return handleError(error);
+  }
+};

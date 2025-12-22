@@ -10,8 +10,8 @@ import {
   LowStockNotification,
   LowStockNotificationInput,
   LowStockNotificationStatus,
-} from '../models/notification.js';
-import { logger } from '../lib/logger.js';
+} from '../models/notification';
+import { logger } from '../lib/logger';
 
 /**
  * Result of creating a low-stock notification

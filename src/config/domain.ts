@@ -102,8 +102,8 @@ export function isApplicationUrl(url: string): boolean {
  * Can be overridden via environment variables for local development
  */
 export const getDomainConfig = () => {
-  const envFrontendUrl = process.env.FRONTEND_URL;
-  const envFromEmail = process.env.SES_FROM_EMAIL;
+  const envFrontendUrl = process.env['FRONTEND_URL'];
+  const envFromEmail = process.env['SES_FROM_EMAIL'];
   
   return {
     frontendUrl: envFrontendUrl || FRONTEND_BASE_URL,

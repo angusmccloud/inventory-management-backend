@@ -898,6 +898,7 @@ Resources:
       Handler: handlers/invitations/acceptInvitation.handler
       Description: Accept invitation and create member account (public)
       Role: !GetAtt LambdaExecutionRole.Arn
+      ReservedConcurrentExecutions: 10  # T076: Rate limiting - limit concurrent executions for public endpoint
       Environment:
         Variables:
           COGNITO_USER_POOL_ID: !Ref UserPool
@@ -988,6 +989,242 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/members/{memberId}
             Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  REFERENCE DATA MANAGEMENT - Storage Locations
+  ##########################################################################
+
+  # GET /families/{familyId}/locations - List storage locations
+  ListStorageLocationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-storage-locations-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/listStorageLocations.handler
+      Description: List all storage locations for a family
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListStorageLocationsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/locations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /families/{familyId}/locations - Create storage location
+  CreateStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-create-storage-location-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/createStorageLocation.handler
+      Description: Create new storage location (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/locations
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/locations/{locationId} - Get storage location
+  GetStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-storage-location-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/getStorageLocation.handler
+      Description: Get single storage location by ID
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/locations/{locationId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # PUT /families/{familyId}/locations/{locationId} - Update storage location
+  UpdateStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-update-storage-location-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/updateStorageLocation.handler
+      Description: Update storage location (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UpdateStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/locations/{locationId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # DELETE /families/{familyId}/locations/{locationId} - Delete storage location
+  DeleteStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-delete-storage-location-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/deleteStorageLocation.handler
+      Description: Delete storage location (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        DeleteStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/locations/{locationId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /families/{familyId}/locations/check-name - Check location name availability
+  CheckStorageLocationNameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-check-storage-location-name-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/checkStorageLocationName.handler
+      Description: Check if storage location name is available
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CheckStorageLocationNameApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/locations/check-name
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  REFERENCE DATA MANAGEMENT - Stores
+  ##########################################################################
+
+  # GET /families/{familyId}/stores - List stores
+  ListStoresFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-stores-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/listStores.handler
+      Description: List all stores for a family
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListStoresApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/stores
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /families/{familyId}/stores - Create store
+  CreateStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-create-store-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/createStore.handler
+      Description: Create new store (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateStoreApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/stores
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/stores/{storeId} - Get store
+  GetStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-store-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/getStore.handler
+      Description: Get single store by ID
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetStoreApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/stores/{storeId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # PUT /families/{familyId}/stores/{storeId} - Update store
+  UpdateStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-update-store-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/updateStore.handler
+      Description: Update store (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UpdateStoreApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/stores/{storeId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # DELETE /families/{familyId}/stores/{storeId} - Delete store
+  DeleteStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-delete-store-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/deleteStore.handler
+      Description: Delete store (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        DeleteStoreApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/stores/{storeId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /families/{familyId}/stores/check-name - Check store name availability
+  CheckStoreNameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-check-store-name-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/reference-data/checkStoreName.handler
+      Description: Check if store name is available
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CheckStoreNameApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/stores/check-name
+            Method: POST
             Auth:
               Authorizer: CognitoAuthorizer
 

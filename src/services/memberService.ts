@@ -43,6 +43,31 @@ export async function getMember(
 
 /**
  * Update member role with last admin protection and optimistic locking
+ * 
+ * Critical safeguards:
+ * 
+ * 1. **Last Admin Protection**: When changing an admin to suggester, verifies
+ *    that at least one other admin exists. This prevents accidentally removing
+ *    all administrative access from a family.
+ * 
+ * 2. **Optimistic Locking**: Uses the version attribute to detect concurrent
+ *    modifications. If the member was updated between read and write, the
+ *    update fails with VERSION_CONFLICT.
+ * 
+ * 3. **Status Check**: Only allows updates to active members. Removed members
+ *    cannot have their role changed.
+ * 
+ * @param familyId - The family ID
+ * @param memberId - The member ID to update
+ * @param newRole - The new role ('admin' or 'suggester')
+ * @param expectedVersion - Current version for optimistic locking
+ * 
+ * @returns Updated member with incremented version
+ * 
+ * @throws {Error} MEMBER_NOT_FOUND - Member doesn't exist
+ * @throws {Error} MEMBER_NOT_ACTIVE - Member status is not 'active'
+ * @throws {Error} LAST_ADMIN_PROTECTION - Cannot change last admin to suggester
+ * @throws {Error} VERSION_CONFLICT - Concurrent update detected
  */
 export async function updateMemberRole(
   familyId: string,
@@ -109,6 +134,32 @@ export async function updateMemberName(
 
 /**
  * Remove member with last admin protection and optimistic locking
+ * 
+ * This function implements a soft delete with several critical safeguards:
+ * 
+ * 1. **Last Admin Protection**: Prevents removal of the last admin in a family.
+ *    This ensures there's always at least one admin who can manage the family.
+ * 
+ * 2. **Optimistic Locking**: Uses version attribute to prevent concurrent updates.
+ *    If another update modified the member between read and write, this will fail
+ *    with VERSION_CONFLICT, requiring the caller to retry with fresh data.
+ * 
+ * 3. **Soft Delete**: Sets status to 'removed' rather than deleting the record.
+ *    This preserves audit trail and maintains referential integrity for items
+ *    created by the removed member.
+ * 
+ * 4. **Session Invalidation**: If a member removes themselves, their Cognito
+ *    session is globally signed out to prevent further access.
+ * 
+ * @param familyId - The family ID
+ * @param memberId - The member ID to remove
+ * @param expectedVersion - Current version for optimistic locking
+ * @param requestingMemberId - ID of member performing the removal (for audit)
+ * 
+ * @throws {Error} MEMBER_NOT_FOUND - Member doesn't exist
+ * @throws {Error} MEMBER_ALREADY_REMOVED - Member already has status 'removed'
+ * @throws {Error} LAST_ADMIN_PROTECTION - Cannot remove the last admin
+ * @throws {Error} VERSION_CONFLICT - Concurrent update detected
  */
 export async function removeMember(
   familyId: string,

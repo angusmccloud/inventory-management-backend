@@ -200,6 +200,54 @@ docker rm dynamodb-local
 
 **Note**: You only need to restart SAM if you change `template.yaml`
 
+## API Documentation
+
+### Available Endpoints
+
+The backend provides RESTful APIs for the following features:
+
+#### Core Features
+- **Family Management** - Create and manage family accounts
+- **Inventory Items** - CRUD operations for household inventory
+- **Shopping Lists** - Create and manage shopping lists
+- **Notifications** - View and manage family notifications
+- **Member Management** - Invite and manage family members
+
+#### Reference Data (Feature 005)
+- **Storage Locations** - Manage storage locations (pantry, garage, etc.)
+- **Stores** - Manage store information (grocery stores, etc.)
+
+### API Specifications
+
+Detailed API specifications are available in the context repository:
+
+- **[Reference Data API Spec](../inventory-management-context/specs/005-reference-data/contracts/api-spec.yaml)** - Storage locations and stores endpoints
+- **[Shopping Lists API Spec](../inventory-management-context/specs/002-shopping-lists/contracts/api-spec.yaml)** - Shopping list management
+- **[Member Management API Spec](../inventory-management-context/specs/003-member-management/contracts/api-spec.yaml)** - Family member invitations
+- **[Core Inventory API Spec](../inventory-management-context/specs/001-family-inventory-mvp/contracts/api-spec.yaml)** - Family and inventory management
+
+### Quick Reference: Reference Data Endpoints
+
+**Storage Locations:**
+- `GET /families/{familyId}/locations` - List all storage locations
+- `POST /families/{familyId}/locations` - Create storage location (admin only)
+- `GET /families/{familyId}/locations/{locationId}` - Get specific location
+- `PUT /families/{familyId}/locations/{locationId}` - Update location (admin only)
+- `DELETE /families/{familyId}/locations/{locationId}` - Delete location (admin only)
+- `POST /families/{familyId}/locations/check-name` - Check name availability
+
+**Stores:**
+- `GET /families/{familyId}/stores` - List all stores
+- `POST /families/{familyId}/stores` - Create store (admin only)
+- `GET /families/{familyId}/stores/{storeId}` - Get specific store
+- `PUT /families/{familyId}/stores/{storeId}` - Update store (admin only)
+- `DELETE /families/{familyId}/stores/{storeId}` - Delete store (admin only)
+- `POST /families/{familyId}/stores/check-name` - Check name availability
+
+**Authentication:** All endpoints require JWT Bearer token via `Authorization: Bearer <token>` header.
+
+**RBAC:** Mutation operations (POST/PUT/DELETE) require `admin` role. Read operations (GET) available to all family members.
+
 ## Local Development Architecture
 
 ```
