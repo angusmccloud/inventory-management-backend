@@ -13,7 +13,7 @@ import {
 describe('Domain Configuration', () => {
   describe('Constants', () => {
     it('should have correct primary domain', () => {
-      expect(PRIMARY_DOMAIN).toBe('inventoryhg.io');
+      expect(PRIMARY_DOMAIN).toBe('inventoryhq.io');
     });
 
     it('should have correct application name', () => {
@@ -21,98 +21,98 @@ describe('Domain Configuration', () => {
     });
 
     it('should have correct frontend base URL', () => {
-      expect(FRONTEND_BASE_URL).toBe('https://inventoryhg.io');
+      expect(FRONTEND_BASE_URL).toBe('https://inventoryhq.io');
     });
 
     it('should have correct email configuration', () => {
-      expect(EMAIL_CONFIG.fromAddress).toBe('noreply@inventoryhg.io');
+      expect(EMAIL_CONFIG.fromAddress).toBe('noreply@inventoryhq.io');
       expect(EMAIL_CONFIG.fromName).toBe('Inventory HQ');
-      expect(EMAIL_CONFIG.replyToAddress).toBe('support@inventoryhg.io');
+      expect(EMAIL_CONFIG.replyToAddress).toBe('support@inventoryhq.io');
     });
 
     it('should have correct subdomain configuration', () => {
-      expect(SUBDOMAINS.www).toBe('www.inventoryhg.io');
-      expect(SUBDOMAINS.api).toBe('api.inventoryhg.io');
+      expect(SUBDOMAINS.www).toBe('www.inventoryhq.io');
+      expect(SUBDOMAINS.api).toBe('api.inventoryhq.io');
     });
   });
 
   describe('getFrontendUrl', () => {
     it('should construct URL with leading slash', () => {
       const url = getFrontendUrl('/dashboard/inventory');
-      expect(url).toBe('https://inventoryhg.io/dashboard/inventory');
+      expect(url).toBe('https://inventoryhq.io/dashboard/inventory');
     });
 
     it('should add leading slash if missing', () => {
       const url = getFrontendUrl('dashboard/inventory');
-      expect(url).toBe('https://inventoryhg.io/dashboard/inventory');
+      expect(url).toBe('https://inventoryhq.io/dashboard/inventory');
     });
 
     it('should handle root path', () => {
       const url = getFrontendUrl('/');
-      expect(url).toBe('https://inventoryhg.io/');
+      expect(url).toBe('https://inventoryhq.io/');
     });
 
     it('should handle empty path', () => {
       const url = getFrontendUrl('');
-      expect(url).toBe('https://inventoryhg.io/');
+      expect(url).toBe('https://inventoryhq.io/');
     });
 
     it('should handle paths with query parameters', () => {
       const url = getFrontendUrl('/accept-invitation?token=abc123');
-      expect(url).toBe('https://inventoryhg.io/accept-invitation?token=abc123');
+      expect(url).toBe('https://inventoryhq.io/accept-invitation?token=abc123');
     });
 
     it('should handle paths with hash fragments', () => {
       const url = getFrontendUrl('/dashboard#inventory');
-      expect(url).toBe('https://inventoryhg.io/dashboard#inventory');
+      expect(url).toBe('https://inventoryhq.io/dashboard#inventory');
     });
   });
 
   describe('getEmailAddress', () => {
     it('should construct email address with local part', () => {
       const email = getEmailAddress('noreply');
-      expect(email).toBe('noreply@inventoryhg.io');
+      expect(email).toBe('noreply@inventoryhq.io');
     });
 
     it('should construct support email address', () => {
       const email = getEmailAddress('support');
-      expect(email).toBe('support@inventoryhg.io');
+      expect(email).toBe('support@inventoryhq.io');
     });
 
     it('should construct custom email address', () => {
       const email = getEmailAddress('admin');
-      expect(email).toBe('admin@inventoryhg.io');
+      expect(email).toBe('admin@inventoryhq.io');
     });
 
     it('should handle email addresses with dots', () => {
       const email = getEmailAddress('no.reply');
-      expect(email).toBe('no.reply@inventoryhg.io');
+      expect(email).toBe('no.reply@inventoryhq.io');
     });
 
     it('should handle email addresses with dashes', () => {
       const email = getEmailAddress('do-not-reply');
-      expect(email).toBe('do-not-reply@inventoryhg.io');
+      expect(email).toBe('do-not-reply@inventoryhq.io');
     });
   });
 
   describe('isApplicationUrl', () => {
     it('should return true for primary domain URL', () => {
-      const result = isApplicationUrl('https://inventoryhg.io/dashboard');
+      const result = isApplicationUrl('https://inventoryhq.io/dashboard');
       expect(result).toBe(true);
     });
 
     it('should return true for www subdomain URL', () => {
-      const result = isApplicationUrl('https://www.inventoryhg.io/dashboard');
+      const result = isApplicationUrl('https://www.inventoryhq.io/dashboard');
       expect(result).toBe(true);
     });
 
     it('should return true for root domain URL', () => {
-      const result = isApplicationUrl('https://inventoryhg.io');
+      const result = isApplicationUrl('https://inventoryhq.io');
       expect(result).toBe(true);
     });
 
     it('should return true for URL with query parameters', () => {
-      const result = isApplicationUrl('https://inventoryhg.io/accept?token=abc');
+      const result = isApplicationUrl('https://inventoryhq.io/accept?token=abc');
       expect(result).toBe(true);
     });
 
@@ -137,7 +137,7 @@ describe('Domain Configuration', () => {
     });
 
     it('should handle http protocol for primary domain', () => {
-      const result = isApplicationUrl('http://inventoryhg.io/dashboard');
+      const result = isApplicationUrl('http://inventoryhq.io/dashboard');
       expect(result).toBe(true);
     });
   });
@@ -160,10 +160,10 @@ describe('Domain Configuration', () => {
 
       const config = getDomainConfig();
 
-      expect(config.frontendUrl).toBe('https://inventoryhg.io');
-      expect(config.fromEmail).toBe('noreply@inventoryhg.io');
+      expect(config.frontendUrl).toBe('https://inventoryhq.io');
+      expect(config.fromEmail).toBe('noreply@inventoryhq.io');
       expect(config.applicationName).toBe('Inventory HQ');
-      expect(config.primaryDomain).toBe('inventoryhg.io');
+      expect(config.primaryDomain).toBe('inventoryhq.io');
     });
 
     it('should use FRONTEND_URL env variable when set', () => {
@@ -172,7 +172,7 @@ describe('Domain Configuration', () => {
       const config = getDomainConfig();
 
       expect(config.frontendUrl).toBe('http://localhost:3000');
-      expect(config.fromEmail).toBe('noreply@inventoryhg.io');
+      expect(config.fromEmail).toBe('noreply@inventoryhq.io');
     });
 
     it('should use SES_FROM_EMAIL env variable when set', () => {
@@ -180,7 +180,7 @@ describe('Domain Configuration', () => {
 
       const config = getDomainConfig();
 
-      expect(config.frontendUrl).toBe('https://inventoryhg.io');
+      expect(config.frontendUrl).toBe('https://inventoryhq.io');
       expect(config.fromEmail).toBe('test@example.com');
     });
 
@@ -193,7 +193,7 @@ describe('Domain Configuration', () => {
       expect(config.frontendUrl).toBe('http://localhost:3000');
       expect(config.fromEmail).toBe('test@example.com');
       expect(config.applicationName).toBe('Inventory HQ');
-      expect(config.primaryDomain).toBe('inventoryhg.io');
+      expect(config.primaryDomain).toBe('inventoryhq.io');
     });
 
     it('should always return the same application name regardless of env', () => {
@@ -209,7 +209,7 @@ describe('Domain Configuration', () => {
 
       const config = getDomainConfig();
 
-      expect(config.primaryDomain).toBe('inventoryhg.io');
+      expect(config.primaryDomain).toBe('inventoryhq.io');
     });
   });
 
@@ -218,9 +218,9 @@ describe('Domain Configuration', () => {
       // TypeScript enforces this at compile time with 'as const'
       // At runtime, we can verify the object exists and has expected properties
       expect(EMAIL_CONFIG).toBeDefined();
-      expect(EMAIL_CONFIG.fromAddress).toBe('noreply@inventoryhg.io');
+      expect(EMAIL_CONFIG.fromAddress).toBe('noreply@inventoryhq.io');
       expect(EMAIL_CONFIG.fromName).toBe('Inventory HQ');
-      expect(EMAIL_CONFIG.replyToAddress).toBe('support@inventoryhg.io');
+      expect(EMAIL_CONFIG.replyToAddress).toBe('support@inventoryhq.io');
     });
   });
 
@@ -230,14 +230,14 @@ describe('Domain Configuration', () => {
       const fullUrl = getFrontendUrl(path);
       const isValid = isApplicationUrl(fullUrl);
 
-      expect(fullUrl).toBe('https://inventoryhg.io/accept-invitation?token=xyz789');
+      expect(fullUrl).toBe('https://inventoryhq.io/accept-invitation?token=xyz789');
       expect(isValid).toBe(true);
     });
 
     it('should generate email addresses with consistent domain', () => {
       const emailAddress = getEmailAddress('noreply');
-      expect(emailAddress).toBe('noreply@inventoryhg.io');
-      expect(emailAddress).toContain('@inventoryhg.io');
+      expect(emailAddress).toBe('noreply@inventoryhq.io');
+      expect(emailAddress).toContain('@inventoryhq.io');
     });
 
     it('should validate URLs constructed from constants', () => {

@@ -8,7 +8,7 @@
 /**
  * Primary domain for the application
  */
-export const PRIMARY_DOMAIN = 'inventoryhg.io';
+export const PRIMARY_DOMAIN = 'inventoryhq.io';
 
 /**
  * Application name displayed in UI and emails
@@ -56,7 +56,7 @@ export const SUBDOMAINS = {
  * @returns Full URL with the primary domain
  * 
  * @example
- * getFrontendUrl('/dashboard/inventory') // 'https://inventoryhg.io/dashboard/inventory'
+ * getFrontendUrl('/dashboard/inventory') // 'https://inventoryhq.io/dashboard/inventory'
  */
 export function getFrontendUrl(path: string): string {
   // Ensure path starts with /
@@ -71,8 +71,8 @@ export function getFrontendUrl(path: string): string {
  * @returns Full email address with the primary domain
  * 
  * @example
- * getEmailAddress('noreply') // 'noreply@inventoryhg.io'
- * getEmailAddress('support') // 'support@inventoryhg.io'
+ * getEmailAddress('noreply') // 'noreply@inventoryhq.io'
+ * getEmailAddress('support') // 'support@inventoryhq.io'
  */
 export function getEmailAddress(localPart: string): string {
   return `${localPart}@${PRIMARY_DOMAIN}`;
@@ -85,7 +85,7 @@ export function getEmailAddress(localPart: string): string {
  * @returns True if the URL uses the primary domain
  * 
  * @example
- * isApplicationUrl('https://inventoryhg.io/dashboard') // true
+ * isApplicationUrl('https://inventoryhq.io/dashboard') // true
  * isApplicationUrl('https://example.com') // false
  */
 export function isApplicationUrl(url: string): boolean {

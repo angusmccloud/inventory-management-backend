@@ -7,6 +7,7 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
 import { ShoppingListService } from '../../services/shoppingListService';
 import { ShoppingListItem } from '../../types/shoppingList';
+import { StoreModel } from '../../models/store';
 import { 
   okResponse, 
   handleError, 
@@ -45,14 +46,35 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       status,
     });
 
+    // Denormalize store names
+    const storeIds = [...new Set(items.map(item => item.storeId).filter(Boolean))] as string[];
+    const stores = await Promise.all(
+      storeIds.map(id => StoreModel.getById(familyId, id))
+    );
+    const storeMap = new Map(stores.filter(Boolean).map(store => [store!.storeId, store!.name]));
+
+    // Add storeName to each item
+    const itemsWithStoreNames = items.map(item => ({
+      ...item,
+      storeName: item.storeId ? storeMap.get(item.storeId) || null : null,
+    }));
+
     // Group by store for convenience
     const grouped = await ShoppingListService.groupByStore(familyId, status);
-    const groupedByStore = Object.entries(grouped).map(([storeKey, storeItems]) => ({
-      storeId: storeKey === 'unassigned' ? null : storeKey,
-      storeName: storeKey === 'unassigned' ? 'Unassigned' : storeKey,
-      itemCount: (storeItems as ShoppingListItem[]).length,
-      pendingCount: (storeItems as ShoppingListItem[]).filter((item: ShoppingListItem) => item.status === 'pending').length,
-    }));
+    const groupedByStore = await Promise.all(
+      Object.entries(grouped).map(async ([storeKey, storeItems]) => {
+        const storeName = storeKey === 'unassigned' 
+          ? 'Unassigned' 
+          : storeMap.get(storeKey) || storeKey;
+        
+        return {
+          storeId: storeKey === 'unassigned' ? null : storeKey,
+          storeName,
+          itemCount: (storeItems as ShoppingListItem[]).length,
+          pendingCount: (storeItems as ShoppingListItem[]).filter((item: ShoppingListItem) => item.status === 'pending').length,
+        };
+      })
+    );
 
     logger.info('Listed shopping list items', { 
       familyId,
@@ -64,7 +86,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     logLambdaCompletion('listShoppingListItems', Date.now() - startTime, context.awsRequestId);
 
     return okResponse({
-      items,
+      items: itemsWithStoreNames,
       groupedByStore,
     });
   } catch (error) {

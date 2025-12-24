@@ -7,6 +7,7 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
 import { ShoppingListService } from '../../services/shoppingListService';
 import { UpdateShoppingListItemSchema } from '../../types/shoppingList';
+import { StoreModel } from '../../models/store';
 import { 
   okResponse, 
   conflictResponse,
@@ -66,6 +67,16 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       });
     }
 
+    // Denormalize store name if storeId present
+    let itemWithStoreName = result.item!;
+    if (result.item!.storeId) {
+      const store = await StoreModel.getById(familyId, result.item!.storeId);
+      itemWithStoreName = {
+        ...result.item!,
+        storeName: store?.name || null,
+      };
+    }
+
     logger.info('Updated shopping list item', { 
       shoppingItemId,
       familyId,
@@ -74,7 +85,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
     logLambdaCompletion('updateShoppingListItem', Date.now() - startTime, context.awsRequestId);
 
-    return okResponse(result.item!);
+    return okResponse(itemWithStoreName);
   } catch (error) {
     logger.error('Failed to update shopping list item', error as Error);
     return handleError(error);

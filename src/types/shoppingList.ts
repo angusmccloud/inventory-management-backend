@@ -27,6 +27,7 @@ export interface ShoppingListItem {
   itemId: string | null; // UUID of InventoryItem (null for free-text items)
   name: string; // Item name (1-100 characters)
   storeId: string | null; // UUID of Store (null for unassigned)
+  storeName?: string | null; // Denormalized store name (for display)
   status: ShoppingListStatus; // Purchase status
   quantity: number | null; // Optional quantity to purchase (integer > 0)
   notes: string | null; // Optional notes (0-500 characters)

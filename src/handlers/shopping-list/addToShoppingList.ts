@@ -7,6 +7,7 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
 import { ShoppingListService } from '../../services/shoppingListService';
 import { CreateShoppingListItemSchema } from '../../types/shoppingList';
+import { StoreModel } from '../../models/store';
 import { 
   createdResponse, 
   conflictResponse,
@@ -65,6 +66,16 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       });
     }
 
+    // Denormalize store name if storeId present
+    let itemWithStoreName = result.item!;
+    if (result.item!.storeId) {
+      const store = await StoreModel.getById(familyId, result.item!.storeId);
+      itemWithStoreName = {
+        ...result.item!,
+        storeName: store?.name || null,
+      };
+    }
+
     logger.info('Added item to shopping list', { 
       shoppingItemId: result.item!.shoppingItemId,
       familyId 
@@ -72,7 +83,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
     logLambdaCompletion('addToShoppingList', Date.now() - startTime, context.awsRequestId);
 
-    return createdResponse(result.item!, 'Item added to shopping list');
+    return createdResponse(itemWithStoreName, 'Item added to shopping list');
   } catch (error) {
     if (error instanceof Error && error.message === 'INVENTORY_ITEM_NOT_FOUND') {
       return notFoundResponse('Inventory item not found');
