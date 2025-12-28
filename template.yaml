@@ -1228,6 +1228,163 @@ Resources:
             Auth:
               Authorizer: CognitoAuthorizer
 
+  ##########################################################################
+  #  User Story 7: NFC Inventory Tap Functions
+  ##########################################################################
+
+  # POST /api/adjust/{urlId} - Adjust inventory via NFC URL (unauthenticated)
+  NfcAdjustmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-nfc-adjustment-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/nfcAdjustmentHandler.handler
+      Description: Unauthenticated NFC inventory adjustment endpoint
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        NfcAdjustmentApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/adjust/{urlId}
+            Method: POST
+            Auth:
+              Authorizer: NONE
+
+  # GET /api/items/{itemId}/nfc-urls - List NFC URLs for item (admin only)
+  ListItemNfcUrlsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-item-nfc-urls-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/nfcUrlHandler.handler
+      Description: List NFC URLs for inventory item (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListItemNfcUrlsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/items/{itemId}/nfc-urls
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /api/items/{itemId}/nfc-urls - Create NFC URL (admin only)
+  CreateNfcUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-create-nfc-url-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/nfcUrlHandler.handler
+      Description: Create new NFC URL for inventory item (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateNfcUrlApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/items/{itemId}/nfc-urls
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /api/items/{itemId}/nfc-urls/{urlId}/rotate - Rotate NFC URL (admin only)
+  RotateNfcUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-rotate-nfc-url-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/nfcUrlHandler.handler
+      Description: Rotate NFC URL (deactivate old, create new) (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RotateNfcUrlApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/items/{itemId}/nfc-urls/{urlId}/rotate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /api/nfc-urls - List all NFC URLs for family (admin only)
+  ListFamilyNfcUrlsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-family-nfc-urls-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/nfcUrlHandler.handler
+      Description: List all NFC URLs for family (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListFamilyNfcUrlsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/nfc-urls
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  CloudWatch Alarms - NFC Security Monitoring (T056)
+  ##########################################################################
+
+  # Alarm for high frequency of invalid NFC URL attempts
+  InvalidNfcUrlAttemptsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-invalid-nfc-url-attempts-${Environment}'
+      AlarmDescription: 'Alert when invalid NFC URL attempts exceed threshold (potential security issue)'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 1
+      Threshold: 10  # Alert if > 10 errors in 5 minutes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref NfcAdjustmentFunction
+      TreatMissingData: notBreaching
+
+  # Alarm for high rate of 404 responses (inactive/invalid URLs)
+  NfcUrl404Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-nfc-url-404-rate-${Environment}'
+      AlarmDescription: 'Alert when 404 rate is high (possible URL scanning attack)'
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 2  # Alert after 2 consecutive periods
+      Threshold: 20  # Alert if > 20 404s in 5 minutes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${AWS::StackName}-api'
+      TreatMissingData: notBreaching
+
+  # Alarm for Lambda throttling (capacity issue)
+  NfcAdjustmentThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-nfc-adjustment-throttle-${Environment}'
+      AlarmDescription: 'Alert when NFC adjustment function is being throttled'
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 60  # 1 minute
+      EvaluationPeriods: 2
+      Threshold: 5  # Alert if throttled more than 5 times in 1 minute
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref NfcAdjustmentFunction
+      TreatMissingData: notBreaching
+
 Outputs:
   InventoryApiUrl:
     Description: "API Gateway endpoint URL"

@@ -2,6 +2,7 @@ import { InventoryItemModel } from '../models/inventory';
 import { StorageLocationModel } from '../models/location';
 import { StoreModel } from '../models/store';
 import { MemberModel } from '../models/member';
+import { NFCUrlModel } from '../models/nfcUrl';
 import { NotificationService } from './notificationService';
 import { logger } from '../lib/logger';
 import {
@@ -217,6 +218,14 @@ export class InventoryService {
       const item = await InventoryItemModel.update(familyId, itemId, updates, modifiedBy);
 
       logger.info('Inventory item updated', { familyId, itemId, updates });
+
+      // Update denormalized itemName in NFC URLs if name changed (T053)
+      if (updates.name) {
+        NFCUrlModel.updateItemName(familyId, itemId, updates.name).catch((error) => {
+          // Log but don't fail the operation if NFC URL update fails
+          logger.error('Failed to update itemName in NFC URLs', error, { familyId, itemId });
+        });
+      }
 
       // Check if item is now low stock and needs notification
       if (InventoryItemModel.isLowStock(item)) {
