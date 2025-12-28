@@ -135,6 +135,34 @@ export const requireAdmin = async (userContext: UserContext, familyId: string): 
 };
 
 /**
+ * Verify user has suggester role for the specified family
+ * 
+ * @param userContext - User context with memberId
+ * @param familyId - Family ID to check suggester role for
+ * @throws Error if user is not a suggester of this family
+ */
+export const requireSuggester = async (userContext: UserContext, familyId: string): Promise<void> => {
+  // In local development, skip role check (mock user has full access)
+  if (process.env['AWS_SAM_LOCAL'] === 'true') {
+    return;
+  }
+  
+  // Import MemberModel dynamically to avoid circular dependencies
+  const { MemberModel } = await import('../models/member.js');
+  
+  // Get member record from DynamoDB to check role
+  const member = await MemberModel.getById(familyId, userContext.memberId);
+  
+  if (!member) {
+    throw new Error('Access denied to this family');
+  }
+  
+  if (member.role !== 'suggester') {
+    throw new Error('Suggester role required for this operation');
+  }
+};
+
+/**
  * Verify user has access to specified family
  * 
  * NOTE: This is a simplified check for now. In production, you should:

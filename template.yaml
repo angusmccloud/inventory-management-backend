@@ -5,6 +5,8 @@ Description: >
   
   Serverless backend for managing household inventory, shopping lists, and notifications
   with multi-user access and role-based permissions.
+  
+  Deployment: v1.0.1 - Added suggestion workflow endpoints with CORS
 
 # Global settings for all serverless functions
 Globals:
@@ -1224,6 +1226,105 @@ Resources:
           Properties:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/stores/check-name
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  User Story 5: Suggester Workflow Functions (Feature 004)
+  ##########################################################################
+
+  # POST /families/{familyId}/suggestions - Create suggestion (suggester only)
+  CreateSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-create-suggestion-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/suggestions/create-suggestion.handler
+      Description: Create suggestion for shopping list or new item (suggester only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/suggestions
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/suggestions - List suggestions
+  ListSuggestionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-list-suggestions-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/suggestions/list-suggestions.handler
+      Description: List suggestions for family with optional status filter
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListSuggestionsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/suggestions
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /families/{familyId}/suggestions/{suggestionId} - Get suggestion
+  GetSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-get-suggestion-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/suggestions/get-suggestion.handler
+      Description: Get single suggestion by ID
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/suggestions/{suggestionId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /families/{familyId}/suggestions/{suggestionId}/approve - Approve suggestion (admin only)
+  ApproveSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-approve-suggestion-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/suggestions/approve-suggestion.handler
+      Description: Approve suggestion and execute action (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ApproveSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/suggestions/{suggestionId}/approve
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /families/{familyId}/suggestions/{suggestionId}/reject - Reject suggestion (admin only)
+  RejectSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-reject-suggestion-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/suggestions/reject-suggestion.handler
+      Description: Reject suggestion with optional notes (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        RejectSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/suggestions/{suggestionId}/reject
             Method: POST
             Auth:
               Authorizer: CognitoAuthorizer

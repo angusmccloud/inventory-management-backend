@@ -63,7 +63,7 @@ export type SuggestionStatus = 'pending' | 'approved' | 'rejected';
 /**
  * Suggestion type
  */
-export type SuggestionType = 'add_item' | 'add_to_shopping_list' | 'other';
+export type SuggestionType = 'add_to_shopping' | 'create_item';
 
 /**
  * Family Entity - Root organizational unit
@@ -181,18 +181,31 @@ export interface Notification extends BaseEntity {
 export interface Suggestion extends BaseEntity {
   suggestionId: string; // UUID
   familyId: string; // UUID
-  suggestedBy: string; // memberId
+  suggestedBy: string; // memberId (must be suggester role)
+  suggestedByName: string; // Snapshot of suggester name
   type: SuggestionType;
   status: SuggestionStatus;
-  itemName: string;
-  quantity?: number;
-  unit?: string;
-  locationId?: string;
-  storeId?: string;
-  notes?: string;
-  reviewedBy?: string; // memberId of admin who approved/rejected
-  reviewedAt?: string; // ISO 8601
-  reviewNotes?: string;
+  
+  // For add_to_shopping type
+  itemId: string | null; // UUID of existing InventoryItem
+  itemNameSnapshot: string | null; // Snapshot of item name for orphan handling
+  
+  // For create_item type
+  proposedItemName: string | null; // Name for new item (1-100 chars)
+  proposedQuantity: number | null; // Quantity for new item (integer >= 0)
+  proposedThreshold: number | null; // Threshold for new item (integer >= 0)
+  
+  // Optional notes
+  notes: string | null; // Suggester notes (0-500 chars)
+  rejectionNotes: string | null; // Admin rejection reason (0-500 chars)
+  
+  // Review information
+  reviewedBy: string | null; // memberId of admin who reviewed
+  reviewedAt: string | null; // ISO 8601 timestamp when reviewed
+  
+  // Optimistic locking
+  version: number; // Starting at 1, incremented on each update
+  
   entityType: 'Suggestion';
   GSI2PK?: string; // FAMILY#{familyId}#SUGGESTIONS
   GSI2SK?: string; // STATUS#{status}#CREATED#{createdAt}

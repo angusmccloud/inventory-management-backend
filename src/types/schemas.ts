@@ -64,7 +64,7 @@ export const suggestionStatusSchema = z.enum(['pending', 'approved', 'rejected']
 /**
  * Suggestion type schema
  */
-export const suggestionTypeSchema = z.enum(['add_item', 'add_to_shopping_list', 'other']);
+export const suggestionTypeSchema = z.enum(['add_to_shopping', 'create_item']);
 
 /**
  * Family Entity Schema
@@ -328,19 +328,24 @@ export const acknowledgeNotificationRequestSchema = z.object({
 });
 
 // Create Suggestion Request
-export const createSuggestionRequestSchema = z.object({
-  type: suggestionTypeSchema,
-  itemName: z.string().min(1).max(200, 'Item name must be 1-200 characters'),
-  quantity: z.number().positive().optional(),
-  unit: z.string().max(50).optional(),
-  locationId: uuidSchema.optional(),
-  storeId: uuidSchema.optional(),
-  notes: z.string().max(500).optional(),
-});
+export const createSuggestionRequestSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('add_to_shopping'),
+    itemId: uuidSchema,
+    notes: z.string().max(500).optional().nullable(),
+  }),
+  z.object({
+    type: z.literal('create_item'),
+    proposedItemName: z.string().min(1).max(100, 'Item name must be 1-100 characters'),
+    proposedQuantity: z.number().int().nonnegative('Quantity must be a non-negative integer'),
+    proposedThreshold: z.number().int().nonnegative('Threshold must be a non-negative integer'),
+    notes: z.string().max(500).optional().nullable(),
+  }),
+]);
 
 // Review Suggestion Request
 export const reviewSuggestionRequestSchema = z.object({
-  reviewNotes: z.string().max(500).optional(),
+  rejectionNotes: z.string().max(500).optional().nullable(),
 });
 
 /**
