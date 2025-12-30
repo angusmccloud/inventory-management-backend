@@ -60,10 +60,20 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
         currentVersion: result.conflict.currentItem.version,
       });
 
+      // Denormalize storeName for conflict item
+      let conflictStoreName: string | null = null;
+      if (result.conflict.currentItem.storeId) {
+        const store = await StoreModel.getById(familyId, result.conflict.currentItem.storeId);
+        conflictStoreName = store?.name || null;
+      }
+
       return conflictResponse({
         error: 'Conflict',
         message: result.conflict.message,
-        currentItem: result.conflict.currentItem,
+        currentItem: {
+          ...result.conflict.currentItem,
+          storeName: conflictStoreName,
+        },
       });
     }
 
@@ -74,6 +84,12 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       itemWithStoreName = {
         ...result.item!,
         storeName: store?.name || null,
+      };
+    } else {
+      // Ensure storeName is null when no storeId
+      itemWithStoreName = {
+        ...result.item!,
+        storeName: null,
       };
     }
 

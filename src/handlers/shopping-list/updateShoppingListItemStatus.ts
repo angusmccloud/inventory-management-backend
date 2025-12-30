@@ -7,6 +7,7 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
 import { ShoppingListService } from '../../services/shoppingListService';
 import { UpdateStatusSchema } from '../../types/shoppingList';
+import { StoreModel } from '../../models/store';
 import { 
   okResponse, 
   conflictResponse,
@@ -59,10 +60,20 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
         currentVersion: result.conflict.currentItem.version,
       });
 
+      // Denormalize storeName for conflict item as well
+      let conflictStoreName: string | null = null;
+      if (result.conflict.currentItem.storeId) {
+        const store = await StoreModel.getById(familyId, result.conflict.currentItem.storeId);
+        conflictStoreName = store?.name || null;
+      }
+
       return conflictResponse({
         error: 'Conflict',
         message: result.conflict.message,
-        currentItem: result.conflict.currentItem,
+        currentItem: {
+          ...result.conflict.currentItem,
+          storeName: conflictStoreName,
+        },
       });
     }
 
@@ -74,9 +85,21 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       ttl: result.item!.ttl,
     });
 
+    // Denormalize storeName for consistency with list endpoint
+    let storeName: string | null = null;
+    if (result.item!.storeId) {
+      const store = await StoreModel.getById(familyId, result.item!.storeId);
+      storeName = store?.name || null;
+    }
+
+    const enrichedItem = {
+      ...result.item!,
+      storeName,
+    };
+
     logLambdaCompletion('updateShoppingListItemStatus', Date.now() - startTime, context.awsRequestId);
 
-    return okResponse(result.item!);
+    return okResponse(enrichedItem);
   } catch (error) {
     logger.error('Failed to update shopping list item status', error as Error);
     return handleError(error);

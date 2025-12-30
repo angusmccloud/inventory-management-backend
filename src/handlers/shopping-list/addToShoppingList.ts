@@ -59,10 +59,20 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
         existingItemId: result.duplicate.item.shoppingItemId,
       });
 
+      // Denormalize storeName for duplicate item
+      let duplicateStoreName: string | null = null;
+      if (result.duplicate.item.storeId) {
+        const store = await StoreModel.getById(familyId, result.duplicate.item.storeId);
+        duplicateStoreName = store?.name || null;
+      }
+
       return conflictResponse({
         error: 'Conflict',
         message: result.duplicate.message,
-        existingItem: result.duplicate.item,
+        existingItem: {
+          ...result.duplicate.item,
+          storeName: duplicateStoreName,
+        },
       });
     }
 
@@ -73,6 +83,12 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       itemWithStoreName = {
         ...result.item!,
         storeName: store?.name || null,
+      };
+    } else {
+      // Ensure storeName is null when no storeId
+      itemWithStoreName = {
+        ...result.item!,
+        storeName: null,
       };
     }
 
