@@ -33,11 +33,13 @@ export const iso8601Schema = z
   .datetime('Invalid ISO 8601 timestamp');
 
 /**
- * Adjustment delta: Only +1 or -1 allowed
+ * Adjustment delta: Any integer value (positive or negative)
+ * Updated to support debounced adjustments (e.g., +3, -5)
  */
 export const deltaSchema = z
-  .union([z.literal(-1), z.literal(1)])
-  .describe('Adjustment delta must be -1 or 1');
+  .number()
+  .int('Adjustment delta must be an integer')
+  .describe('Adjustment delta (positive to increase, negative to decrease)');
 
 /**
  * Request body for POST /api/adjust/{urlId}

@@ -66,7 +66,7 @@ export interface RotateNFCUrlInput {
  */
 export interface AdjustInventoryViaUrlInput {
   urlId: string;
-  delta: -1 | 1;  // Only +1 or -1 adjustments allowed
+  delta: number;  // Any integer adjustment (accumulated from debouncing)
 }
 
 /**
@@ -88,7 +88,7 @@ export interface AdjustmentResponse {
   itemName: string;
   newQuantity: number;
   message?: string;
-  delta: -1 | 1;
+  delta: number;  // Any integer adjustment (accumulated from debouncing)
   timestamp: string;
   errorCode?: 'URL_INVALID' | 'ITEM_NOT_FOUND' | 'FAMILY_MISMATCH';
   errorMessage?: string;
@@ -98,7 +98,7 @@ export interface AdjustmentResponse {
  * Request body for NFC adjustment API
  */
 export interface NfcAdjustmentRequest {
-  delta: -1 | 1;
+  delta: number;  // Any integer adjustment (accumulated from debouncing)
 }
 
 /**
