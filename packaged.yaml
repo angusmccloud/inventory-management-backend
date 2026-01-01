@@ -1,0 +1,1900 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Family Inventory Management System - Backend Infrastructure
+
+  Serverless backend for managing household inventory, shopping lists, and notifications
+  with multi-user access and role-based permissions.
+
+  Deployment: v1.0.1 - Added suggestion workflow endpoints with CORS
+
+  '
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs24.x
+    Architectures:
+    - x86_64
+    Environment:
+      Variables:
+        TABLE_NAME:
+          Ref: InventoryTable
+        NODE_ENV:
+          Ref: Environment
+        LOG_LEVEL: INFO
+        WARMUP_ENABLED: 'true'
+    Tracing: Active
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+    - dev
+    - staging
+    - prod
+    Description: Deployment environment
+  SESFromEmail:
+    Type: String
+    Default: ''
+    Description: Verified email address for sending notifications via SES
+  FrontendUrl:
+    Type: String
+    Default: http://localhost:3000
+    Description: Frontend application URL for invitation links
+Conditions:
+  HasSESEmail:
+    Fn::Not:
+    - Fn::Equals:
+      - Ref: SESFromEmail
+      - ''
+Resources:
+  CognitoSESRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: email.cognito-idp.amazonaws.com
+          Action: sts:AssumeRole
+          Condition:
+            StringEquals:
+              sts:ExternalId:
+                Ref: AWS::AccountId
+      Policies:
+      - PolicyName: CognitoSESPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+            Resource:
+              Fn::Sub: arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/inventoryhq.io
+    Metadata:
+      SamResourceId: CognitoSESRole
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName:
+        Fn::Sub: ${AWS::StackName}-users-${Environment}
+      UsernameAttributes:
+      - email
+      AutoVerifiedAttributes:
+      - email
+      EmailConfiguration:
+        EmailSendingAccount: DEVELOPER
+        SourceArn:
+          Fn::Sub: arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/inventoryhq.io
+        From:
+          Fn::Sub: Inventory HQ <${SESFromEmail}>
+        ReplyToEmailAddress: support@inventoryhq.io
+        ConfigurationSet:
+          Ref: AWS::NoValue
+      EmailVerificationMessage: Your Inventory HQ verification code is {####}
+      EmailVerificationSubject: Verify your Inventory HQ account
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      Schema:
+      - Name: email
+        AttributeDataType: String
+        Required: true
+        Mutable: true
+      - Name: name
+        AttributeDataType: String
+        Required: false
+        Mutable: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+        - Name: verified_email
+          Priority: 1
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+      - SOFTWARE_TOKEN_MFA
+      UserPoolTags:
+        Environment:
+          Ref: Environment
+        Application: InventoryHQ
+    Metadata:
+      SamResourceId: UserPool
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName:
+        Fn::Sub: ${AWS::StackName}-client-${Environment}
+      UserPoolId:
+        Ref: UserPool
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 365
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      ExplicitAuthFlows:
+      - ALLOW_USER_PASSWORD_AUTH
+      - ALLOW_REFRESH_TOKEN_AUTH
+      - ALLOW_USER_SRP_AUTH
+      GenerateSecret: false
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: ENABLED
+      ReadAttributes:
+      - email
+      - email_verified
+      - name
+      WriteAttributes:
+      - email
+      - name
+    Metadata:
+      SamResourceId: UserPoolClient
+  InventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Fn::Sub: ${AWS::StackName}-inventory-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+      - Key: Environment
+        Value:
+          Ref: Environment
+      - Key: Application
+        Value: FamilyInventoryManagement
+      AttributeDefinitions:
+      - AttributeName: PK
+        AttributeType: S
+      - AttributeName: SK
+        AttributeType: S
+      - AttributeName: GSI1PK
+        AttributeType: S
+      - AttributeName: GSI1SK
+        AttributeType: S
+      - AttributeName: GSI2PK
+        AttributeType: S
+      - AttributeName: GSI2SK
+        AttributeType: S
+      KeySchema:
+      - AttributeName: PK
+        KeyType: HASH
+      - AttributeName: SK
+        KeyType: RANGE
+      GlobalSecondaryIndexes:
+      - IndexName: GSI1
+        KeySchema:
+        - AttributeName: GSI1PK
+          KeyType: HASH
+        - AttributeName: GSI1SK
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+      - IndexName: GSI2
+        KeySchema:
+        - AttributeName: GSI2PK
+          KeyType: HASH
+        - AttributeName: GSI2SK
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+    Metadata:
+      SamResourceId: InventoryTable
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+      - PolicyName: DynamoDBAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:BatchGetItem
+            - dynamodb:BatchWriteItem
+            Resource:
+            - Fn::GetAtt:
+              - InventoryTable
+              - Arn
+            - Fn::Sub: ${InventoryTable.Arn}/index/*
+      - PolicyName: SESAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+            Resource: '*'
+            Condition:
+              StringEquals:
+                ses:FromAddress:
+                  Fn::If:
+                  - HasSESEmail
+                  - Ref: SESFromEmail
+                  - '*'
+      - PolicyName: SecretsManagerAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - secretsmanager:GetSecretValue
+            Resource:
+              Fn::Sub: arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/inventory-mgmt/${Environment}/invitation-hmac-secret-*
+      - PolicyName: SSMParameterAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+            Resource:
+              Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/inventory-mgmt/${Environment}/*
+      - PolicyName: CognitoUserManagement
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - cognito-idp:AdminCreateUser
+            - cognito-idp:AdminSetUserPassword
+            - cognito-idp:AdminGetUser
+            - cognito-idp:AdminUserGlobalSignOut
+            Resource:
+              Fn::GetAtt:
+              - UserPool
+              - Arn
+    Metadata:
+      SamResourceId: LambdaExecutionRole
+  InventoryApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name:
+        Fn::Sub: ${AWS::StackName}-api-${Environment}
+      StageName:
+        Ref: Environment
+      Cors:
+        AllowMethods: '''GET,POST,PUT,PATCH,DELETE,OPTIONS'''
+        AllowHeaders: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+        AllowOrigin: '''*'''
+        MaxAge: '''3600'''
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn:
+              Fn::GetAtt:
+              - UserPool
+              - Arn
+            Identity:
+              Header: Authorization
+      GatewayResponses:
+        UNAUTHORIZED:
+          StatusCode: 401
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: '''*'''
+              Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+              Access-Control-Allow-Methods: '''GET,POST,PUT,PATCH,DELETE,OPTIONS'''
+        ACCESS_DENIED:
+          StatusCode: 403
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: '''*'''
+              Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+              Access-Control-Allow-Methods: '''GET,POST,PUT,PATCH,DELETE,OPTIONS'''
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: '''*'''
+              Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+              Access-Control-Allow-Methods: '''GET,POST,PUT,PATCH,DELETE,OPTIONS'''
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: '''*'''
+              Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+              Access-Control-Allow-Methods: '''GET,POST,PUT,PATCH,DELETE,OPTIONS'''
+      TracingEnabled: true
+      Tags:
+        Environment:
+          Ref: Environment
+        Application: FamilyInventoryManagement
+    Metadata:
+      SamResourceId: InventoryApi
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-health-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/health.handler
+      Description: Health check endpoint for API status monitoring
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        HealthCheckApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /health
+            Method: GET
+    Metadata:
+      SamResourceId: HealthCheckFunction
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-authorizer-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/authorizer.handler
+      Description: Lambda authorizer for Cognito JWT validation and role-based access
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ARN:
+            Fn::GetAtt:
+            - UserPool
+            - Arn
+    Metadata:
+      SamResourceId: AuthorizerFunction
+  CreateFamilyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-create-family-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/createFamily.handler
+      Description: Create a new family with authenticated user as first admin
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CreateFamilyApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateFamilyFunction
+  ListUserFamiliesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-user-families-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/listUserFamilies.handler
+      Description: List all families the authenticated user is a member of
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListUserFamiliesApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /user/families
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListUserFamiliesFunction
+  GetFamilyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-family-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/getFamily.handler
+      Description: Retrieve family details by ID
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetFamilyApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetFamilyFunction
+  UpdateFamilyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-family-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/updateFamily.handler
+      Description: Update family name (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateFamilyApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateFamilyFunction
+  CreateInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-create-inventory-item-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/createInventoryItem.handler
+      Description: Create new inventory item (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CreateInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/inventory
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateInventoryItemFunction
+  ListInventoryItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-inventory-items-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/listInventoryItems.handler
+      Description: List all inventory items for a family
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListInventoryItemsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/inventory
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListInventoryItemsFunction
+  GetInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-inventory-item-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/getInventoryItem.handler
+      Description: Get single inventory item by ID
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetInventoryItemFunction
+  UpdateInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-inventory-item-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/updateInventoryItem.handler
+      Description: Update inventory item details (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateInventoryItemFunction
+  AdjustInventoryQuantityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-adjust-inventory-quantity-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/adjustInventoryQuantity.handler
+      Description: Adjust inventory item quantity (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        AdjustInventoryQuantityApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}/quantity
+            Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: AdjustInventoryQuantityFunction
+  ArchiveInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-archive-inventory-item-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/archiveInventoryItem.handler
+      Description: Archive inventory item (soft delete, admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ArchiveInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}/archive
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ArchiveInventoryItemFunction
+  DeleteInventoryItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-delete-inventory-item-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/deleteInventoryItem.handler
+      Description: Delete inventory item endpoint (returns error suggesting archive)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        DeleteInventoryItemApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/inventory/{itemId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: DeleteInventoryItemFunction
+  ListNotificationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-notifications-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/listNotifications.handler
+      Description: List all notifications for a family (optionally filtered by status)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL:
+            Fn::If:
+            - HasSESEmail
+            - Ref: SESFromEmail
+            - ''
+      Events:
+        ListNotificationsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/notifications
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListNotificationsFunction
+  AcknowledgeNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-acknowledge-notification-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/acknowledgeNotification.handler
+      Description: Acknowledge a low-stock notification (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL:
+            Fn::If:
+            - HasSESEmail
+            - Ref: SESFromEmail
+            - ''
+      Events:
+        AcknowledgeNotificationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/notifications/{notificationId}/acknowledge
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: AcknowledgeNotificationFunction
+  ResolveNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-resolve-notification-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/resolveNotification.handler
+      Description: Resolve a low-stock notification (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL:
+            Fn::If:
+            - HasSESEmail
+            - Ref: SESFromEmail
+            - ''
+      Events:
+        ResolveNotificationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/notifications/{notificationId}/resolve
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ResolveNotificationFunction
+  ListShoppingListItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-shopping-list-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/shopping-list/listShoppingListItems.handler
+      Description: List all shopping list items for a family (with optional filters)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListShoppingListApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/shopping-list
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListShoppingListItemsFunction
+  AddToShoppingListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-add-to-shopping-list-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/shopping-list/addToShoppingList.handler
+      Description: Add item to shopping list (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        AddToShoppingListApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/shopping-list
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: AddToShoppingListFunction
+  GetShoppingListItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-shopping-list-item-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/shopping-list/getShoppingListItem.handler
+      Description: Get single shopping list item by ID
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetShoppingListItemApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetShoppingListItemFunction
+  UpdateShoppingListItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-shopping-list-item-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/shopping-list/updateShoppingListItem.handler
+      Description: Update shopping list item details (admin only, optimistic locking)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateShoppingListItemApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateShoppingListItemFunction
+  UpdateShoppingListItemStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-shopping-list-status-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/shopping-list/updateShoppingListItemStatus.handler
+      Description: Toggle shopping list item status (admin only, manages TTL)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateShoppingListItemStatusApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}/status
+            Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateShoppingListItemStatusFunction
+  RemoveFromShoppingListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-remove-from-shopping-list-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/shopping-list/removeFromShoppingList.handler
+      Description: Remove item from shopping list (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        RemoveFromShoppingListApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/shopping-list/{shoppingItemId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: RemoveFromShoppingListFunction
+  CreateInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-create-invitation-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/invitations/createInvitation.handler
+      Description: Create and send member invitation (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Environment:
+        Variables:
+          FRONTEND_URL:
+            Ref: FrontendUrl
+          INVITATION_HMAC_SECRET_NAME:
+            Fn::Sub: /inventory-mgmt/${Environment}/invitation-hmac-secret
+          INVITATION_EXPIRATION_SECONDS: '604800'
+      Events:
+        CreateInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/invitations
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateInvitationFunction
+  ListInvitationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-invitations-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/invitations/listInvitations.handler
+      Description: List family invitations (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListInvitationsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/invitations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListInvitationsFunction
+  GetInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-invitation-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/invitations/getInvitation.handler
+      Description: Get invitation details (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/invitations/{invitationId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetInvitationFunction
+  RevokeInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-revoke-invitation-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/invitations/revokeInvitation.handler
+      Description: Revoke pending invitation (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        RevokeInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/invitations/{invitationId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: RevokeInvitationFunction
+  AcceptInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-accept-invitation-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/invitations/acceptInvitation.handler
+      Description: Accept invitation and create member account (public)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      ReservedConcurrentExecutions: 10
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID:
+            Ref: UserPool
+          INVITATION_HMAC_SECRET_NAME:
+            Fn::Sub: /inventory-mgmt/${Environment}/invitation-hmac-secret
+      Events:
+        AcceptInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /invitations/accept
+            Method: POST
+            Auth:
+              Authorizer: NONE
+    Metadata:
+      SamResourceId: AcceptInvitationFunction
+  ListMembersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-members-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/members/listMembers.handler
+      Description: List family members
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListMembersApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/members
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListMembersFunction
+  GetMemberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-member-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/members/getMember.handler
+      Description: Get member details
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetMemberApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/members/{memberId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetMemberFunction
+  UpdateMemberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-member-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/members/updateMember.handler
+      Description: Update member role or name (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateMemberApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/members/{memberId}
+            Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateMemberFunction
+  RemoveMemberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-remove-member-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/members/removeMember.handler
+      Description: Remove member from family (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID:
+            Ref: UserPool
+      Events:
+        RemoveMemberApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/members/{memberId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: RemoveMemberFunction
+  ListStorageLocationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-storage-locations-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/listStorageLocations.handler
+      Description: List all storage locations for a family
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListStorageLocationsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/locations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListStorageLocationsFunction
+  CreateStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-create-storage-location-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/createStorageLocation.handler
+      Description: Create new storage location (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CreateStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/locations
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateStorageLocationFunction
+  GetStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-storage-location-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/getStorageLocation.handler
+      Description: Get single storage location by ID
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/locations/{locationId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetStorageLocationFunction
+  UpdateStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-storage-location-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/updateStorageLocation.handler
+      Description: Update storage location (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/locations/{locationId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateStorageLocationFunction
+  DeleteStorageLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-delete-storage-location-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/deleteStorageLocation.handler
+      Description: Delete storage location (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        DeleteStorageLocationApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/locations/{locationId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: DeleteStorageLocationFunction
+  CheckStorageLocationNameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-check-storage-location-name-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/checkStorageLocationName.handler
+      Description: Check if storage location name is available
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CheckStorageLocationNameApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/locations/check-name
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CheckStorageLocationNameFunction
+  ListStoresFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-stores-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/listStores.handler
+      Description: List all stores for a family
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListStoresApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/stores
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListStoresFunction
+  CreateStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-create-store-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/createStore.handler
+      Description: Create new store (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CreateStoreApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/stores
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateStoreFunction
+  GetStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-store-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/getStore.handler
+      Description: Get single store by ID
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetStoreApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/stores/{storeId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetStoreFunction
+  UpdateStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-store-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/updateStore.handler
+      Description: Update store (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateStoreApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/stores/{storeId}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateStoreFunction
+  DeleteStoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-delete-store-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/deleteStore.handler
+      Description: Delete store (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        DeleteStoreApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/stores/{storeId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: DeleteStoreFunction
+  CheckStoreNameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-check-store-name-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/reference-data/checkStoreName.handler
+      Description: Check if store name is available
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CheckStoreNameApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/stores/check-name
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CheckStoreNameFunction
+  CreateSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-create-suggestion-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/suggestions/create-suggestion.handler
+      Description: Create suggestion for shopping list or new item (suggester only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CreateSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/suggestions
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateSuggestionFunction
+  ListSuggestionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-suggestions-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/suggestions/list-suggestions.handler
+      Description: List suggestions for family with optional status filter
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListSuggestionsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/suggestions
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListSuggestionsFunction
+  GetSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-suggestion-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/suggestions/get-suggestion.handler
+      Description: Get single suggestion by ID
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/suggestions/{suggestionId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetSuggestionFunction
+  ApproveSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-approve-suggestion-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/suggestions/approve-suggestion.handler
+      Description: Approve suggestion and execute action (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ApproveSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/suggestions/{suggestionId}/approve
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ApproveSuggestionFunction
+  RejectSuggestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-reject-suggestion-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/suggestions/reject-suggestion.handler
+      Description: Reject suggestion with optional notes (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        RejectSuggestionApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /families/{familyId}/suggestions/{suggestionId}/reject
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: RejectSuggestionFunction
+  GetThemePreferenceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-get-theme-preference-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/getThemePreference.handler
+      Description: Retrieve user's theme preference (light/dark/auto)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        GetThemePreferenceApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /users/{userId}/preferences/theme
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: GetThemePreferenceFunction
+  UpdateThemePreferenceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-update-theme-preference-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/updateThemePreference.handler
+      Description: Update user's theme preference (light/dark/auto)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        UpdateThemePreferenceApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /users/{userId}/preferences/theme
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: UpdateThemePreferenceFunction
+  NfcAdjustmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-nfc-adjustment-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/nfcAdjustmentHandler.handler
+      Description: Unauthenticated NFC inventory adjustment endpoint
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        NfcAdjustmentApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /api/adjust/{urlId}
+            Method: POST
+            Auth:
+              Authorizer: NONE
+    Metadata:
+      SamResourceId: NfcAdjustmentFunction
+  ListItemNfcUrlsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-item-nfc-urls-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/nfcUrlHandler.handler
+      Description: List NFC URLs for inventory item (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListItemNfcUrlsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /api/items/{itemId}/nfc-urls
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListItemNfcUrlsFunction
+  CreateNfcUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-create-nfc-url-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/nfcUrlHandler.handler
+      Description: Create new NFC URL for inventory item (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        CreateNfcUrlApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /api/items/{itemId}/nfc-urls
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: CreateNfcUrlFunction
+  RotateNfcUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-rotate-nfc-url-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/nfcUrlHandler.handler
+      Description: Rotate NFC URL (deactivate old, create new) (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        RotateNfcUrlApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /api/items/{itemId}/nfc-urls/{urlId}/rotate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: RotateNfcUrlFunction
+  ListFamilyNfcUrlsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-list-family-nfc-urls-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/nfcUrlHandler.handler
+      Description: List all NFC URLs for family (admin only)
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Events:
+        ListFamilyNfcUrlsApi:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: InventoryApi
+            Path: /api/nfc-urls
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+    Metadata:
+      SamResourceId: ListFamilyNfcUrlsFunction
+  WarmupOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AWS::StackName}-warmup-orchestrator-${Environment}
+      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-1uima8birqpo0/4809487b55e78b030d29269a0d2d9ff6
+      Handler: handlers/warmup/orchestrator.handler
+      Description: Orchestrates warmup of all Lambda functions to reduce cold starts
+      Role:
+        Fn::GetAtt:
+        - LambdaExecutionRole
+        - Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          STACK_NAME:
+            Ref: AWS::StackName
+          ENVIRONMENT:
+            Ref: Environment
+    Metadata:
+      SamResourceId: WarmupOrchestratorFunction
+  WarmupOrchestratorInvokePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName:
+        Fn::Sub: ${AWS::StackName}-warmup-invoke-policy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource:
+          - Fn::Sub: arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-*
+      Roles:
+      - Ref: LambdaExecutionRole
+    Metadata:
+      SamResourceId: WarmupOrchestratorInvokePolicy
+  LambdaWarmupRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name:
+        Fn::Sub: ${AWS::StackName}-lambda-warmup-${Environment}
+      Description: Scheduled rule to keep Lambda functions warm and reduce cold starts
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+      - Arn:
+          Fn::GetAtt:
+          - WarmupOrchestratorFunction
+          - Arn
+        Id: WarmupOrchestratorTarget
+    Metadata:
+      SamResourceId: LambdaWarmupRule
+  WarmupOrchestratorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: WarmupOrchestratorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - LambdaWarmupRule
+        - Arn
+    Metadata:
+      SamResourceId: WarmupOrchestratorPermission
+  InvalidNfcUrlAttemptsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: ${AWS::StackName}-invalid-nfc-url-attempts-${Environment}
+      AlarmDescription: Alert when invalid NFC URL attempts exceed threshold (potential
+        security issue)
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+      - Name: FunctionName
+        Value:
+          Ref: NfcAdjustmentFunction
+      TreatMissingData: notBreaching
+    Metadata:
+      SamResourceId: InvalidNfcUrlAttemptsAlarm
+  NfcUrl404Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: ${AWS::StackName}-nfc-url-404-rate-${Environment}
+      AlarmDescription: Alert when 404 rate is high (possible URL scanning attack)
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+      - Name: ApiName
+        Value:
+          Fn::Sub: ${AWS::StackName}-api
+      TreatMissingData: notBreaching
+    Metadata:
+      SamResourceId: NfcUrl404Alarm
+  NfcAdjustmentThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:
+        Fn::Sub: ${AWS::StackName}-nfc-adjustment-throttle-${Environment}
+      AlarmDescription: Alert when NFC adjustment function is being throttled
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+      - Name: FunctionName
+        Value:
+          Ref: NfcAdjustmentFunction
+      TreatMissingData: notBreaching
+    Metadata:
+      SamResourceId: NfcAdjustmentThrottleAlarm
+Outputs:
+  InventoryApiUrl:
+    Description: API Gateway endpoint URL
+    Value:
+      Fn::Sub: https://${InventoryApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ApiUrl
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value:
+      Ref: UserPool
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-UserPoolId
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value:
+      Fn::GetAtt:
+      - UserPool
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-UserPoolArn
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value:
+      Ref: UserPoolClient
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-UserPoolClientId
+  InventoryTableName:
+    Description: DynamoDB table name
+    Value:
+      Ref: InventoryTable
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-TableName
+  InventoryTableArn:
+    Description: DynamoDB table ARN
+    Value:
+      Fn::GetAtt:
+      - InventoryTable
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-TableArn
+  LambdaExecutionRoleArn:
+    Description: Lambda execution role ARN
+    Value:
+      Fn::GetAtt:
+      - LambdaExecutionRole
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-LambdaRoleArn
+  ApiId:
+    Description: API Gateway ID
+    Value:
+      Ref: InventoryApi
+    Export:
+      Name:
+        Fn::Sub: ${AWS::StackName}-ApiId

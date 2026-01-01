@@ -13,16 +13,16 @@ import { logger } from './logger.js';
  * Warmup events are identified by the source field in the event
  */
 export const isWarmupEvent = (event: any): boolean => {
-  // Check if this is an EventBridge warmup event
+  // Check for orchestrator warmup event (new pattern)
+  if (event.source === 'warmup.orchestrator' || event.warmup === true) {
+    return true;
+  }
+  
+  // Legacy: Check if this is an EventBridge warmup event
   if (event.source === 'serverless-plugin-warmup' || 
       event['detail-type'] === 'Scheduled Event' && 
       event.source === 'aws.events' &&
       event.resources?.[0]?.includes?.('warmup')) {
-    return true;
-  }
-  
-  // Additional check for direct warmup invocation
-  if (event.warmup === true || event.source === 'warmup') {
     return true;
   }
   

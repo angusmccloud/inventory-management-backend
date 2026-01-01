@@ -86,6 +86,7 @@ export interface Member extends BaseEntity {
   role: MemberRole;
   status: MemberStatus;
   version: number; // Optimistic locking version (starts at 1)
+  themePreference?: 'light' | 'dark' | 'auto'; // User's theme preference (optional, defaults to 'auto')
   entityType: 'Member';
   GSI1PK?: string; // MEMBER#{memberId}
   GSI1SK?: string; // FAMILY#{familyId}
