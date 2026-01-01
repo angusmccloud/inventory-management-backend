@@ -21,6 +21,7 @@ Globals:
         TABLE_NAME: !Ref InventoryTable
         NODE_ENV: !Ref Environment
         LOG_LEVEL: INFO
+        WARMUP_ENABLED: "true"
     Tracing: Active
 
 Parameters:
@@ -1427,6 +1428,551 @@ Resources:
             Method: GET
             Auth:
               Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  Lambda Warmup - EventBridge Rule
+  ##########################################################################
+
+  # EventBridge rule to warm up all Lambda functions
+  LambdaWarmupRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-lambda-warmup-${Environment}'
+      Description: Scheduled rule to keep Lambda functions warm and reduce cold starts
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt HealthCheckFunction.Arn
+          Id: HealthCheckFunctionTarget
+        - Arn: !GetAtt AuthorizerFunction.Arn
+          Id: AuthorizerFunctionTarget
+        - Arn: !GetAtt CreateFamilyFunction.Arn
+          Id: CreateFamilyFunctionTarget
+        - Arn: !GetAtt ListUserFamiliesFunction.Arn
+          Id: ListUserFamiliesFunctionTarget
+        - Arn: !GetAtt GetFamilyFunction.Arn
+          Id: GetFamilyFunctionTarget
+        - Arn: !GetAtt UpdateFamilyFunction.Arn
+          Id: UpdateFamilyFunctionTarget
+        - Arn: !GetAtt CreateInventoryItemFunction.Arn
+          Id: CreateInventoryItemFunctionTarget
+        - Arn: !GetAtt ListInventoryItemsFunction.Arn
+          Id: ListInventoryItemsFunctionTarget
+        - Arn: !GetAtt GetInventoryItemFunction.Arn
+          Id: GetInventoryItemFunctionTarget
+        - Arn: !GetAtt UpdateInventoryItemFunction.Arn
+          Id: UpdateInventoryItemFunctionTarget
+        - Arn: !GetAtt AdjustInventoryQuantityFunction.Arn
+          Id: AdjustInventoryQuantityFunctionTarget
+        - Arn: !GetAtt ArchiveInventoryItemFunction.Arn
+          Id: ArchiveInventoryItemFunctionTarget
+        - Arn: !GetAtt DeleteInventoryItemFunction.Arn
+          Id: DeleteInventoryItemFunctionTarget
+        - Arn: !GetAtt ListNotificationsFunction.Arn
+          Id: ListNotificationsFunctionTarget
+        - Arn: !GetAtt AcknowledgeNotificationFunction.Arn
+          Id: AcknowledgeNotificationFunctionTarget
+        - Arn: !GetAtt ResolveNotificationFunction.Arn
+          Id: ResolveNotificationFunctionTarget
+        - Arn: !GetAtt ListShoppingListItemsFunction.Arn
+          Id: ListShoppingListItemsFunctionTarget
+        - Arn: !GetAtt AddToShoppingListFunction.Arn
+          Id: AddToShoppingListFunctionTarget
+        - Arn: !GetAtt GetShoppingListItemFunction.Arn
+          Id: GetShoppingListItemFunctionTarget
+        - Arn: !GetAtt UpdateShoppingListItemFunction.Arn
+          Id: UpdateShoppingListItemFunctionTarget
+        - Arn: !GetAtt UpdateShoppingListItemStatusFunction.Arn
+          Id: UpdateShoppingListItemStatusFunctionTarget
+        - Arn: !GetAtt RemoveFromShoppingListFunction.Arn
+          Id: RemoveFromShoppingListFunctionTarget
+        - Arn: !GetAtt CreateInvitationFunction.Arn
+          Id: CreateInvitationFunctionTarget
+        - Arn: !GetAtt ListInvitationsFunction.Arn
+          Id: ListInvitationsFunctionTarget
+        - Arn: !GetAtt GetInvitationFunction.Arn
+          Id: GetInvitationFunctionTarget
+        - Arn: !GetAtt RevokeInvitationFunction.Arn
+          Id: RevokeInvitationFunctionTarget
+        - Arn: !GetAtt AcceptInvitationFunction.Arn
+          Id: AcceptInvitationFunctionTarget
+        - Arn: !GetAtt ListMembersFunction.Arn
+          Id: ListMembersFunctionTarget
+        - Arn: !GetAtt GetMemberFunction.Arn
+          Id: GetMemberFunctionTarget
+        - Arn: !GetAtt UpdateMemberFunction.Arn
+          Id: UpdateMemberFunctionTarget
+        - Arn: !GetAtt RemoveMemberFunction.Arn
+          Id: RemoveMemberFunctionTarget
+        - Arn: !GetAtt ListStorageLocationsFunction.Arn
+          Id: ListStorageLocationsFunctionTarget
+        - Arn: !GetAtt CreateStorageLocationFunction.Arn
+          Id: CreateStorageLocationFunctionTarget
+        - Arn: !GetAtt GetStorageLocationFunction.Arn
+          Id: GetStorageLocationFunctionTarget
+        - Arn: !GetAtt UpdateStorageLocationFunction.Arn
+          Id: UpdateStorageLocationFunctionTarget
+        - Arn: !GetAtt DeleteStorageLocationFunction.Arn
+          Id: DeleteStorageLocationFunctionTarget
+        - Arn: !GetAtt CheckStorageLocationNameFunction.Arn
+          Id: CheckStorageLocationNameFunctionTarget
+        - Arn: !GetAtt ListStoresFunction.Arn
+          Id: ListStoresFunctionTarget
+        - Arn: !GetAtt CreateStoreFunction.Arn
+          Id: CreateStoreFunctionTarget
+        - Arn: !GetAtt GetStoreFunction.Arn
+          Id: GetStoreFunctionTarget
+        - Arn: !GetAtt UpdateStoreFunction.Arn
+          Id: UpdateStoreFunctionTarget
+        - Arn: !GetAtt DeleteStoreFunction.Arn
+          Id: DeleteStoreFunctionTarget
+        - Arn: !GetAtt CheckStoreNameFunction.Arn
+          Id: CheckStoreNameFunctionTarget
+        - Arn: !GetAtt CreateSuggestionFunction.Arn
+          Id: CreateSuggestionFunctionTarget
+        - Arn: !GetAtt ListSuggestionsFunction.Arn
+          Id: ListSuggestionsFunctionTarget
+        - Arn: !GetAtt GetSuggestionFunction.Arn
+          Id: GetSuggestionFunctionTarget
+        - Arn: !GetAtt ApproveSuggestionFunction.Arn
+          Id: ApproveSuggestionFunctionTarget
+        - Arn: !GetAtt RejectSuggestionFunction.Arn
+          Id: RejectSuggestionFunctionTarget
+        - Arn: !GetAtt NfcAdjustmentFunction.Arn
+          Id: NfcAdjustmentFunctionTarget
+        - Arn: !GetAtt ListItemNfcUrlsFunction.Arn
+          Id: ListItemNfcUrlsFunctionTarget
+        - Arn: !GetAtt CreateNfcUrlFunction.Arn
+          Id: CreateNfcUrlFunctionTarget
+        - Arn: !GetAtt RotateNfcUrlFunction.Arn
+          Id: RotateNfcUrlFunctionTarget
+        - Arn: !GetAtt ListFamilyNfcUrlsFunction.Arn
+          Id: ListFamilyNfcUrlsFunctionTarget
+
+  # Lambda permissions for EventBridge to invoke functions
+  HealthCheckFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HealthCheckFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  AuthorizerFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CreateFamilyFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateFamilyFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListUserFamiliesFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListUserFamiliesFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetFamilyFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetFamilyFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  UpdateFamilyFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateFamilyFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CreateInventoryItemFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateInventoryItemFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListInventoryItemsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListInventoryItemsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetInventoryItemFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetInventoryItemFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  UpdateInventoryItemFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateInventoryItemFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  AdjustInventoryQuantityFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AdjustInventoryQuantityFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ArchiveInventoryItemFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ArchiveInventoryItemFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  DeleteInventoryItemFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeleteInventoryItemFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListNotificationsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListNotificationsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  AcknowledgeNotificationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AcknowledgeNotificationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ResolveNotificationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ResolveNotificationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListShoppingListItemsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListShoppingListItemsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  AddToShoppingListFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AddToShoppingListFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetShoppingListItemFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetShoppingListItemFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  UpdateShoppingListItemFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateShoppingListItemFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  UpdateShoppingListItemStatusFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateShoppingListItemStatusFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  RemoveFromShoppingListFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RemoveFromShoppingListFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CreateInvitationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateInvitationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListInvitationsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListInvitationsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetInvitationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetInvitationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  RevokeInvitationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RevokeInvitationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  AcceptInvitationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AcceptInvitationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListMembersFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListMembersFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetMemberFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetMemberFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  UpdateMemberFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateMemberFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  RemoveMemberFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RemoveMemberFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListStorageLocationsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListStorageLocationsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CreateStorageLocationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateStorageLocationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetStorageLocationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetStorageLocationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  UpdateStorageLocationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateStorageLocationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  DeleteStorageLocationFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeleteStorageLocationFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CheckStorageLocationNameFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CheckStorageLocationNameFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListStoresFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListStoresFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CreateStoreFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateStoreFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetStoreFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetStoreFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  UpdateStoreFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdateStoreFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  DeleteStoreFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DeleteStoreFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CheckStoreNameFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CheckStoreNameFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CreateSuggestionFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateSuggestionFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListSuggestionsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListSuggestionsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  GetSuggestionFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetSuggestionFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ApproveSuggestionFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ApproveSuggestionFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  RejectSuggestionFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RejectSuggestionFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  NfcAdjustmentFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NfcAdjustmentFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListItemNfcUrlsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListItemNfcUrlsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  CreateNfcUrlFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateNfcUrlFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  RotateNfcUrlFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RotateNfcUrlFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ListFamilyNfcUrlsFunctionWarmupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ListFamilyNfcUrlsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaWarmupRule.Arn
 
   ##########################################################################
   #  CloudWatch Alarms - NFC Security Monitoring (T056)

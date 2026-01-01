@@ -6,6 +6,7 @@ import {
 } from '../lib/response.js';
 import { createLambdaLogger, logLambdaInvocation } from '../lib/logger.js';
 import { getUserContext, requireFamilyAccess, requireAdmin } from '../lib/auth.js';
+import { handleWarmup, warmupResponse } from '../lib/warmup.js';
 
 /**
  * DELETE /families/{familyId}/inventory/{itemId}
@@ -13,6 +14,11 @@ import { getUserContext, requireFamilyAccess, requireAdmin } from '../lib/auth.j
  * Note: Prefer archiving items over deleting them
  */
 export const handler: APIGatewayProxyHandler = async (event, context) => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   const logger = createLambdaLogger(context.awsRequestId);
   
   logLambdaInvocation('deleteInventoryItem', event, context.awsRequestId);

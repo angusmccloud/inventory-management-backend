@@ -5,12 +5,14 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { Context } from 'aws-lambda';
 import { z } from 'zod';
 import { logger } from '../../lib/logger';
 import { successResponse, errorResponse } from '../../lib/response';
 import { getAuthContext, requireAdmin, verifyFamilyAccess } from '../../lib/authorization';
 import { updateMemberRole, updateMemberName, getMember } from '../../services/memberService';
 import { MemberRoleSchema } from '../../types/invitation';
+import { handleWarmup, warmupResponse } from '../../lib/warmup.js';
 
 const UpdateMemberRequestSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -18,7 +20,12 @@ const UpdateMemberRequestSchema = z.object({
   version: z.number().int().min(1),
 });
 
-export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+export async function handler(event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   try {
     // Get auth context
     const authContext = await getAuthContext(event);

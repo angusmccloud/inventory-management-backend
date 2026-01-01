@@ -5,12 +5,19 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { Context } from 'aws-lambda';
 import { logger } from '../../lib/logger';
 import { successResponse, errorResponse } from '../../lib/response';
 import { getAuthContext, requireFamilyMember, verifyFamilyAccess } from '../../lib/authorization';
 import { listMembers } from '../../services/memberService';
+import { handleWarmup, warmupResponse } from '../../lib/warmup.js';
 
-export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+export async function handler(event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   try {
     // Get auth context
     const authContext = await getAuthContext(event);

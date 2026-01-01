@@ -4,7 +4,7 @@
  * Feature: 003-member-management
  */
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { logger } from '../../lib/logger';
 import { successResponse, errorResponse } from '../../lib/response';
 import { getAuthContext, requireAdmin, verifyFamilyAccess } from '../../lib/authorization';
@@ -12,8 +12,14 @@ import { createInvitation } from '../../services/invitationService';
 import { getMember } from '../../services/memberService';
 import { FamilyModel } from '../../models/family';
 import { CreateInvitationRequestSchema } from '../../types/invitation';
+import { handleWarmup, warmupResponse } from '../../lib/warmup.js';
 
-export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+export async function handler(event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   try {
     // Get auth context
     const authContext = await getAuthContext(event);

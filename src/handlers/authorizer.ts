@@ -11,11 +11,13 @@ import {
   APIGatewayTokenAuthorizerEvent,
   PolicyDocument,
   Statement,
+  Context,
 } from 'aws-lambda';
 import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { createLambdaLogger } from '../lib/logger.js';
 import { docClient, getTableName } from '../lib/dynamodb.js';
 import type { Member } from '../types/entities.js';
+import { handleWarmup } from '../lib/warmup.js';
 
 /**
  * JWT token structure from Cognito
@@ -48,8 +50,27 @@ interface DecodedToken {
  * Token format: "Bearer <token>"
  */
 export const handler = async (
-  event: APIGatewayTokenAuthorizerEvent
+  event: APIGatewayTokenAuthorizerEvent,
+  context: Context
 ): Promise<APIGatewayAuthorizerResult> => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event as any, context)) {
+    // For authorizers, we need to return a policy, not an HTTP response
+    return {
+      principalId: 'warmup',
+      policyDocument: {
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Action: 'execute-api:Invoke',
+            Effect: 'Deny',
+            Resource: event.methodArn,
+          },
+        ],
+      },
+    };
+  }
+
   const logger = createLambdaLogger();
 
   try {

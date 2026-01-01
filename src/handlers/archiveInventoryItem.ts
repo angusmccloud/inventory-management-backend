@@ -7,12 +7,18 @@ import {
 } from '../lib/response.js';
 import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger.js';
 import { getUserContext, requireFamilyAccess, requireAdmin } from '../lib/auth.js';
+import { handleWarmup, warmupResponse } from '../lib/warmup.js';
 
 /**
  * POST /families/{familyId}/inventory/{itemId}/archive
  * Archive an inventory item (admin only)
  */
 export const handler: APIGatewayProxyHandler = async (event, context) => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   const startTime = Date.now();
   const logger = createLambdaLogger(context.awsRequestId);
   

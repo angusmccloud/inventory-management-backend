@@ -17,12 +17,18 @@ import {
 } from '../../lib/response';
 import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../../lib/logger';
 import { getUserContext, requireFamilyAccess, requireAdmin } from '../../lib/auth';
+import { handleWarmup, warmupResponse } from '../../lib/warmup.js';
 
 /**
  * PATCH /families/{familyId}/shopping-list/{shoppingItemId}/status
  * Update shopping list item status (toggle purchased)
  */
 export const handler: APIGatewayProxyHandler = async (event, context) => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   const startTime = Date.now();
   const logger = createLambdaLogger(context.awsRequestId);
   

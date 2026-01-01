@@ -9,7 +9,7 @@
  * @see specs/006-api-integration/contracts/nfc-adjustment-api.yaml
  */
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { NfcService } from '../services/nfcService';
 import { logger } from '../lib/logger';
 import { 
@@ -17,6 +17,7 @@ import {
   urlIdSchema, 
   safeValidateRequest 
 } from '../lib/validation/nfcSchemas';
+import { handleWarmup, warmupResponse } from '../lib/warmup';
 
 /**
  * CORS headers for unauthenticated endpoint
@@ -37,8 +38,14 @@ const CORS_HEADERS = {
  * No authentication required - URL ID acts as bearer token
  */
 export const handler = async (
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
+  context: Context
 ): Promise<APIGatewayProxyResult> => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   logger.info('NFC adjustment request received', {
     path: event.path,
     method: event.httpMethod,

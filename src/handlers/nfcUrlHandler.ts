@@ -13,7 +13,7 @@
  * @see specs/006-api-integration/contracts/nfc-url-management-api.yaml
  */
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { NfcService } from '../services/nfcService';
 import { logger } from '../lib/logger';
 import { getUserContext, requireAdmin, UserContext } from '../lib/auth';
@@ -24,6 +24,7 @@ import {
   urlIdSchema,
   safeValidateRequest 
 } from '../lib/validation/nfcSchemas';
+import { handleWarmup, warmupResponse } from '../lib/warmup';
 
 /**
  * CORS headers
@@ -39,8 +40,14 @@ const CORS_HEADERS = {
  * Main handler
  */
 export const handler = async (
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
+  context: Context
 ): Promise<APIGatewayProxyResult> => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   try {
     logger.info('NFC URL management request received', {
       path: event.path,

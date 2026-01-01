@@ -1,14 +1,21 @@
-import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import type { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { successResponse } from '../lib/response.js';
 import { logger } from '../lib/logger.js';
+import { handleWarmup, warmupResponse } from '../lib/warmup.js';
 
 /**
  * Health check endpoint handler
  * Returns API status and basic system information
  */
 export const handler = async (
-  event: APIGatewayProxyEvent
+  event: APIGatewayProxyEvent,
+  context: Context
 ): Promise<APIGatewayProxyResult> => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   try {
     logger.info('Health check request', {
       requestId: event.requestContext.requestId,

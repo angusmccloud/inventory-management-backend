@@ -8,12 +8,18 @@ import {
 } from '../lib/response.js';
 import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../lib/logger.js';
 import { getUserContext, requireFamilyAccess } from '../lib/auth.js';
+import { handleWarmup, warmupResponse } from '../lib/warmup.js';
 
 /**
  * GET /families/{familyId}
  * Get family details
  */
 export const handler: APIGatewayProxyHandler = async (event, context) => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   const startTime = Date.now();
   const logger = createLambdaLogger(context.awsRequestId);
   

@@ -4,6 +4,7 @@ import { successResponse, handleError, getPathParameter } from '../../lib/respon
 import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../../lib/logger.js';
 import { getUserContext, requireFamilyAccess } from '../../lib/auth.js';
 import { SuggestionStatus } from '../../types/entities.js';
+import { handleWarmup, warmupResponse } from '../../lib/warmup.js';
 
 /**
  * GET /families/{familyId}/suggestions
@@ -14,6 +15,11 @@ import { SuggestionStatus } from '../../types/entities.js';
  * - nextToken: string (optional, for pagination)
  */
 export const handler: APIGatewayProxyHandler = async (event, context) => {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   const startTime = Date.now();
   const logger = createLambdaLogger(context.awsRequestId);
 

@@ -5,6 +5,7 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { Context } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
   AdminCreateUserCommand,
@@ -18,12 +19,18 @@ import { validateToken } from '../../services/tokenService';
 import { MemberModel } from '../../models/member';
 import { FamilyModel } from '../../models/family';
 import { AcceptInvitationRequestSchema } from '../../types/invitation';
+import { handleWarmup, warmupResponse } from '../../lib/warmup.js';
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env['AWS_REGION'] || 'us-east-1',
 });
 
-export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+export async function handler(event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> {
+  // Handle warmup events - exit early to avoid unnecessary processing
+  if (handleWarmup(event, context)) {
+    return warmupResponse();
+  }
+
   try {
     // Parse and validate request body
     const body = JSON.parse(event.body || '{}');
