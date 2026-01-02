@@ -70,6 +70,16 @@ const FUNCTION_NAMES = [
   'list-family-nfc-urls',
   'get-theme-preference',
   'update-theme-preference',
+  // Dashboard functions (Feature 014)
+  'dashboard-public-access',
+  'dashboard-adjustment',
+  'dashboard-access-record',
+  'list-dashboards',
+  'create-dashboard',
+  'get-dashboard',
+  'update-dashboard',
+  'delete-dashboard',
+  'rotate-dashboard',
 ];
 
 /**

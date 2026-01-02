@@ -6,7 +6,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { logger } from './logger';
 import { errorResponse } from './response';
-import { getMember } from '../services/memberService';
+import { MemberModel } from '../models/member';
 
 /**
  * Extract member details from Lambda authorizer context
@@ -39,55 +39,33 @@ export async function getAuthContext(event: APIGatewayProxyEvent): Promise<AuthC
       return null;
     }
 
-    let familyId =
-      (authorizer?.['familyId'] as string | undefined) ||
-      (claims['custom:familyId'] as string | undefined) ||
-      '';
-    let role =
-      (authorizer?.['role'] as AuthContext['role'] | undefined) ||
-      (claims['custom:role'] as AuthContext['role'] | undefined) ||
-      null;
+    // Always look up member from DynamoDB to get familyId and role
+    // This ensures we always have the latest membership information
+    try {
+      const member = await MemberModel.getByMemberId(memberId);
 
-    const pathFamilyId = event.pathParameters?.['familyId'];
-
-    // When Cognito authorizer does not inject family/role context, resolve from DynamoDB using path familyId
-    if ((!familyId || !role) && pathFamilyId) {
-      try {
-        const member = await getMember(pathFamilyId, memberId);
-
-        if (!member) {
-          logger.warn('Member not found for family during auth resolution', {
-            memberId,
-            pathFamilyId,
-          });
-          return null;
-        }
-
-        familyId = member.familyId;
-        role = member.role;
-      } catch (lookupError) {
-        logger.error(
-          'Failed to resolve member from family during auth context build',
-          lookupError as Error,
-          {
-            memberId,
-            pathFamilyId,
-          }
-        );
+      if (!member || member.status !== 'active') {
+        logger.warn('No active member found for user', {
+          memberId,
+          memberStatus: member?.status,
+        });
         return null;
       }
-    }
 
-    if (!familyId || !role) {
-      logger.warn('Incomplete auth context after resolution', {
-        memberId,
-        hasFamilyId: !!familyId,
-        hasRole: !!role,
-      });
+      const familyId = member.familyId;
+      const role = member.role;
+
+      return { memberId, familyId, role, email };
+    } catch (lookupError) {
+      logger.error(
+        'Failed to resolve member from database during auth context build',
+        lookupError as Error,
+        {
+          memberId,
+        }
+      );
       return null;
     }
-
-    return { memberId, familyId, role, email };
   } catch (error) {
     logger.error('Failed to parse auth context', error as Error);
     return null;
