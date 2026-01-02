@@ -123,6 +123,14 @@ Resources:
           AttributeDataType: String
           Required: false
           Mutable: true
+        - Name: familyId
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+          Required: false
       
       # Account recovery
       AccountRecoverySetting:
@@ -1470,6 +1478,121 @@ Resources:
             Method: GET
             Auth:
               Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  User Story 8: Inventory Dashboards Functions (Feature 014)
+  ##########################################################################
+
+  # GET /api/dashboards - List dashboards (authenticated admin)
+  # GET /api/dashboards/{dashboardId} - Get dashboard details (authenticated admin)
+  # POST /api/dashboards - Create dashboard (authenticated admin)
+  # PATCH /api/dashboards/{dashboardId} - Update dashboard (authenticated admin)
+  # DELETE /api/dashboards/{dashboardId} - Delete dashboard (authenticated admin)
+  # POST /api/dashboards/{dashboardId}/rotate - Rotate dashboard URL (authenticated admin)
+  DashboardManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-dashboard-management-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/dashboardHandler.handler
+      Description: Dashboard CRUD operations (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        ListDashboardsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/dashboards
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateDashboardApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/dashboards
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetDashboardApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/dashboards/{dashboardId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateDashboardApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/dashboards/{dashboardId}
+            Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteDashboardApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/dashboards/{dashboardId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+        RotateDashboardApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/dashboards/{dashboardId}/rotate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET /d/{dashboardId} - Public dashboard view (unauthenticated)
+  # POST /d/{dashboardId}/access - Record dashboard access (unauthenticated analytics)
+  DashboardAccessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-dashboard-access-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/dashboardAccessHandler.handler
+      Description: Public dashboard viewing and access tracking (no auth required)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetDashboardPublicApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /d/{dashboardId}
+            Method: GET
+            Auth:
+              Authorizer: NONE
+        RecordDashboardAccessApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /d/{dashboardId}/access
+            Method: POST
+            Auth:
+              Authorizer: NONE
+
+  # POST /api/public/dashboards/{dashboardId}/items/{itemId}/adjust - Adjust item quantity (unauthenticated)
+  DashboardAdjustmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-dashboard-adjustment-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/dashboardAdjustmentHandler.handler
+      Description: Public dashboard item quantity adjustment (no auth required)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        AdjustDashboardItemApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /api/public/dashboards/{dashboardId}/items/{itemId}/adjust
+            Method: POST
+            Auth:
+              Authorizer: NONE
 
   ##########################################################################
   #  Lambda Warmup - Orchestrator Pattern

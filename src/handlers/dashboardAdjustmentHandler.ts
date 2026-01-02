@@ -71,7 +71,30 @@ export async function adjustItemQuantity(
       adjustment: input.adjustment,
     });
 
-    const result = await DashboardService.adjustItemQuantity(dashboardId, itemId, input.adjustment);
+    // Look up the dashboard to get the familyId
+    const dashboard = await DashboardService.getDashboardPublic(dashboardId);
+
+    if (!dashboard) {
+      logger.warn('Dashboard not found', { dashboardId });
+      return errorResponse(404, 'NOT_FOUND', 'Dashboard not found');
+    }
+
+    // Verify the item is part of this dashboard
+    const itemExists = dashboard.items.some(item => item.itemId === itemId);
+    if (!itemExists) {
+      logger.warn('Item not found in dashboard', { dashboardId, itemId });
+      return errorResponse(404, 'NOT_FOUND', 'Dashboard or item not found');
+    }
+
+    // Extract familyId from the dashboardId (format: familyId_randomString)
+    const familyId = dashboardId.split('_')[0];
+
+    if (!familyId) {
+      logger.warn('Invalid dashboard ID format', { dashboardId });
+      return errorResponse(400, 'INVALID_DASHBOARD_ID', 'Invalid dashboard ID format');
+    }
+
+    const result = await DashboardService.adjustItemQuantity(familyId, itemId, input.adjustment);
 
     return successResponse(result);
   } catch (error) {
