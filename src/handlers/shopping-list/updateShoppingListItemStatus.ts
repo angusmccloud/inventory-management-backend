@@ -98,9 +98,25 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       storeName = store?.name || null;
     }
 
+    // Add inventoryNotes if item is linked to inventory
+    let inventoryNotes: string | null = null;
+    if (result.item!.itemId) {
+      try {
+        const { InventoryItemModel } = await import('../../models/inventory');
+        const inventoryItem = await InventoryItemModel.getById(familyId, result.item!.itemId);
+        inventoryNotes = inventoryItem?.notes || null;
+      } catch (err) {
+        logger.warn('Failed to fetch inventory notes for status update', { 
+          itemId: result.item!.itemId, 
+          error: err 
+        });
+      }
+    }
+
     const enrichedItem = {
       ...result.item!,
       storeName,
+      inventoryNotes,
     };
 
     logLambdaCompletion('updateShoppingListItemStatus', Date.now() - startTime, context.awsRequestId);

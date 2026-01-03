@@ -1,6 +1,6 @@
 /**
  * DELETE /families/{familyId}/stores/{storeId}
- * Delete a store
+ * Archive a store
  * Feature: 005-reference-data
  */
 
@@ -39,13 +39,13 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     // Ensure user can only access their own family
     await requireFamilyAccess(userContext, familyId);
 
-    // Only admins can delete stores
+    // Only admins can archive stores
     await requireAdmin(userContext, familyId);
 
-    // Delete store
+    // Archive store
     await deleteStore(familyId, userContext, storeId);
 
-    logger.info('Store deleted successfully', {
+    logger.info('Store archived successfully', {
       storeId,
       familyId,
     });
@@ -54,7 +54,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
     return noContentResponse();
   } catch (error) {
-    logger.error('Failed to delete store', error as Error);
+    logger.error('Failed to archive store', error as Error);
     return handleError(error);
   }
 };

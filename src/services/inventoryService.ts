@@ -122,23 +122,31 @@ export class InventoryService {
    */
   static async createItem(input: InventoryItemInput): Promise<InventoryItem> {
     try {
-      // Validate location if provided
+      // Validate location if provided and populate locationName
+      let locationName: string | undefined;
       if (input.locationId) {
         const location = await StorageLocationModel.getById(input.familyId, input.locationId);
         if (!location) {
           throw new Error('Storage location not found');
         }
+        locationName = location.name;
       }
 
-      // Validate store if provided
+      // Validate store if provided and populate preferredStoreName
+      let preferredStoreName: string | undefined;
       if (input.preferredStoreId) {
         const store = await StoreModel.getById(input.familyId, input.preferredStoreId);
         if (!store) {
           throw new Error('Store not found');
         }
+        preferredStoreName = store.name;
       }
 
-      const item = await InventoryItemModel.create(input);
+      const item = await InventoryItemModel.create({
+        ...input,
+        locationName,
+        preferredStoreName,
+      });
 
       logger.info('Inventory item created', { 
         itemId: item.itemId, 
@@ -199,19 +207,31 @@ export class InventoryService {
     modifiedBy: string
   ): Promise<InventoryItem> {
     try {
-      // Validate location if being updated
-      if (updates.locationId) {
-        const location = await StorageLocationModel.getById(familyId, updates.locationId);
-        if (!location) {
-          throw new Error('Storage location not found');
+      // Validate location if being updated and populate locationName
+      if (updates.locationId !== undefined) {
+        if (updates.locationId) {
+          const location = await StorageLocationModel.getById(familyId, updates.locationId);
+          if (!location) {
+            throw new Error('Storage location not found');
+          }
+          updates.locationName = location.name;
+        } else {
+          // Clearing location
+          updates.locationName = undefined;
         }
       }
 
-      // Validate store if being updated
-      if (updates.preferredStoreId) {
-        const store = await StoreModel.getById(familyId, updates.preferredStoreId);
-        if (!store) {
-          throw new Error('Store not found');
+      // Validate store if being updated and populate preferredStoreName
+      if (updates.preferredStoreId !== undefined) {
+        if (updates.preferredStoreId) {
+          const store = await StoreModel.getById(familyId, updates.preferredStoreId);
+          if (!store) {
+            throw new Error('Store not found');
+          }
+          updates.preferredStoreName = store.name;
+        } else {
+          // Clearing store
+          updates.preferredStoreName = undefined;
         }
       }
 

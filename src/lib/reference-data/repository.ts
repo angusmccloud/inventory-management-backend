@@ -110,6 +110,7 @@ export async function createStorageLocation(
 
 /**
  * List all storage locations for a family
+ * Excludes archived locations
  */
 export async function listStorageLocations(
   familyId: string
@@ -120,9 +121,11 @@ export async function listStorageLocations(
     new QueryCommand({
       TableName: tableName,
       KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
+      FilterExpression: 'attribute_not_exists(archived) OR archived = :false',
       ExpressionAttributeValues: {
         ':pk': `FAMILY#${familyId}`,
         ':skPrefix': 'LOCATION#',
+        ':false': false,
       },
     })
   );
@@ -215,8 +218,8 @@ export async function updateStorageLocation(
 }
 
 /**
- * Delete a storage location
- * Checks for references before deleting
+ * Archive a storage location
+ * Sets archived flag to true instead of deleting
  */
 export async function deleteStorageLocation(
   familyId: string,
@@ -224,6 +227,7 @@ export async function deleteStorageLocation(
 ): Promise<void> {
   const tableName = getTableName();
   const { PK, SK } = buildLocationKeys(familyId, locationId);
+  const now = new Date().toISOString();
 
   // Check if location exists
   const location = await getStorageLocation(familyId, locationId);
@@ -231,19 +235,19 @@ export async function deleteStorageLocation(
     throw new NotFoundError('StorageLocation', locationId);
   }
 
-  // Check for references
-  const hasReferences = await hasLocationReferences(familyId, locationId);
-  if (hasReferences) {
-    const referenceCount = await getLocationReferenceCount(familyId, locationId);
-    throw new ReferenceExistsError('StorageLocation', locationId, {
-      inventoryItems: referenceCount,
-    });
-  }
-
+  // Archive the location by setting archived flag
   await docClient.send(
-    new DeleteCommand({
+    new UpdateCommand({
       TableName: tableName,
       Key: { PK, SK },
+      UpdateExpression: 'SET archived = :true, #updatedAt = :now',
+      ExpressionAttributeNames: {
+        '#updatedAt': 'updatedAt',
+      },
+      ExpressionAttributeValues: {
+        ':true': true,
+        ':now': now,
+      },
     })
   );
 }
@@ -384,6 +388,7 @@ export async function createStore(
 
 /**
  * List all stores for a family
+ * Excludes archived stores
  */
 export async function listStores(familyId: string): Promise<Store[]> {
   const tableName = getTableName();
@@ -392,9 +397,11 @@ export async function listStores(familyId: string): Promise<Store[]> {
     new QueryCommand({
       TableName: tableName,
       KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
+      FilterExpression: 'attribute_not_exists(archived) OR archived = :false',
       ExpressionAttributeValues: {
         ':pk': `FAMILY#${familyId}`,
         ':skPrefix': 'STORE#',
+        ':false': false,
       },
     })
   );
@@ -487,8 +494,8 @@ export async function updateStore(
 }
 
 /**
- * Delete a store
- * Checks for references before deleting (both InventoryItems and ShoppingListItems)
+ * Archive a store
+ * Sets archived flag to true instead of deleting
  */
 export async function deleteStore(
   familyId: string,
@@ -496,6 +503,7 @@ export async function deleteStore(
 ): Promise<void> {
   const tableName = getTableName();
   const { PK, SK } = buildStoreKeys(familyId, storeId);
+  const now = new Date().toISOString();
 
   // Check if store exists
   const store = await getStore(familyId, storeId);
@@ -503,17 +511,19 @@ export async function deleteStore(
     throw new NotFoundError('Store', storeId);
   }
 
-  // Check for references
-  const hasReferences = await hasStoreReferences(familyId, storeId);
-  if (hasReferences) {
-    const referenceCount = await getStoreReferenceCount(familyId, storeId);
-    throw new ReferenceExistsError('Store', storeId, referenceCount);
-  }
-
+  // Archive the store by setting archived flag
   await docClient.send(
-    new DeleteCommand({
+    new UpdateCommand({
       TableName: tableName,
       Key: { PK, SK },
+      UpdateExpression: 'SET archived = :true, #updatedAt = :now',
+      ExpressionAttributeNames: {
+        '#updatedAt': 'updatedAt',
+      },
+      ExpressionAttributeValues: {
+        ':true': true,
+        ':now': now,
+      },
     })
   );
 }

@@ -123,6 +123,7 @@ export interface StorageLocation extends BaseEntity {
   familyId: string; // UUID
   name: string;
   description?: string;
+  archived?: boolean; // Whether this location has been archived
   entityType: 'StorageLocation';
 }
 
@@ -135,6 +136,7 @@ export interface Store extends BaseEntity {
   name: string;
   address?: string;
   notes?: string;
+  archived?: boolean; // Whether this store has been archived
   entityType: 'Store';
 }
 

@@ -99,6 +99,23 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
       };
     }
 
+    // Add inventoryNotes if item is linked to inventory
+    if (result.item!.itemId) {
+      try {
+        const { InventoryItemModel } = await import('../../models/inventory');
+        const inventoryItem = await InventoryItemModel.getById(familyId, result.item!.itemId);
+        itemWithStoreName = {
+          ...itemWithStoreName,
+          inventoryNotes: inventoryItem?.notes || null,
+        };
+      } catch (err) {
+        logger.warn('Failed to fetch inventory notes for updated shopping list item', { 
+          itemId: result.item!.itemId, 
+          error: err 
+        });
+      }
+    }
+
     logger.info('Updated shopping list item', { 
       shoppingItemId,
       familyId,

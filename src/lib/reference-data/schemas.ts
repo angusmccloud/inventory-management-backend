@@ -49,6 +49,7 @@ export const StorageLocationSchema = z.object({
   name: StorageLocationNameSchema,
   nameLower: z.string(), // Lowercase version for uniqueness checks
   description: StorageLocationDescriptionSchema,
+  archived: z.boolean().optional(),
   version: z.number().int().positive(),
   entityType: z.literal('StorageLocation'),
   createdAt: z.string().datetime(),
@@ -111,6 +112,7 @@ export const StoreSchema = z.object({
   name: StoreNameSchema,
   nameLower: z.string(), // Lowercase version for uniqueness checks
   address: StoreAddressSchema,
+  archived: z.boolean().optional(),
   version: z.number().int().positive(),
   entityType: z.literal('Store'),
   createdAt: z.string().datetime(),

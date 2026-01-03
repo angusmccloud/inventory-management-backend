@@ -1,6 +1,6 @@
 /**
  * DELETE /families/{familyId}/locations/{locationId}
- * Delete a storage location
+ * Archive a storage location
  * Feature: 005-reference-data
  */
 
@@ -39,13 +39,13 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     // Ensure user can only access their own family
     await requireFamilyAccess(userContext, familyId);
 
-    // Only admins can delete storage locations
+    // Only admins can archive storage locations
     await requireAdmin(userContext, familyId);
 
-    // Delete storage location
+    // Archive storage location
     await deleteStorageLocation(familyId, userContext, locationId);
 
-    logger.info('Storage location deleted successfully', {
+    logger.info('Storage location archived successfully', {
       locationId,
       familyId,
     });
@@ -54,7 +54,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
     return noContentResponse();
   } catch (error) {
-    logger.error('Failed to delete storage location', error as Error);
+    logger.error('Failed to archive storage location', error as Error);
     return handleError(error);
   }
 };

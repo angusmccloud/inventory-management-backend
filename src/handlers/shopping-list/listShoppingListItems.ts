@@ -59,10 +59,28 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     );
     const storeMap = new Map(stores.filter(Boolean).map(store => [store!.storeId, store!.name]));
 
-    // Add storeName to each item
+    // Fetch inventory items for items that are linked (to get inventory notes)
+    const inventoryItemIds = [...new Set(items.map(item => item.itemId).filter(Boolean))] as string[];
+    const inventoryItems = await Promise.all(
+      inventoryItemIds.map(async (id) => {
+        try {
+          const { InventoryItemModel } = await import('../../models/inventory');
+          return await InventoryItemModel.getById(familyId, id);
+        } catch (err) {
+          logger.warn('Failed to fetch inventory item', { itemId: id, error: err });
+          return null;
+        }
+      })
+    );
+    const inventoryMap = new Map(
+      inventoryItems.filter(Boolean).map(item => [item!.itemId, item!])
+    );
+
+    // Add storeName and inventoryNotes to each item
     const itemsWithStoreNames = items.map(item => ({
       ...item,
       storeName: item.storeId ? storeMap.get(item.storeId) || null : null,
+      inventoryNotes: item.itemId ? (inventoryMap.get(item.itemId)?.notes || null) : null,
     }));
 
     // Group by store for convenience

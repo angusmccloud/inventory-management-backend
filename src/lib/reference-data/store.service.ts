@@ -6,7 +6,7 @@
  * - Role-based access control (adults only for mutations)
  * - Case-insensitive uniqueness enforcement
  * - Optimistic locking for concurrent edits
- * - Reference checking before deletion (both inventory and shopping list items)
+ * - Archiving instead of deletion
  */
 
 import type {
@@ -142,16 +142,16 @@ export async function updateStore(
 }
 
 /**
- * Delete a store
+ * Archive a store
  * Requires admin role (enforced by handler via requireAdmin())
- * Checks for references before deleting (both inventory and shopping list items)
+ * Sets archived flag instead of deleting
  */
 export async function deleteStore(
   familyId: string,
   context: UserContext,
   storeId: string
 ): Promise<void> {
-  logger.info('Deleting store', {
+  logger.info('Archiving store', {
     familyId: familyId,
     memberId: context.memberId,
     storeId,
@@ -159,7 +159,7 @@ export async function deleteStore(
 
   await deleteStoreRepo(familyId, storeId);
   
-  logger.info('Store deleted', {
+  logger.info('Store archived', {
     familyId: familyId,
     storeId,
   });

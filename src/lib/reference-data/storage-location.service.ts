@@ -6,7 +6,7 @@
  * - Role-based access control (adults only for mutations)
  * - Case-insensitive uniqueness enforcement
  * - Optimistic locking for concurrent edits
- * - Reference checking before deletion
+ * - Archiving instead of deletion
  */
 
 import type {
@@ -145,16 +145,16 @@ export async function updateStorageLocation(
 }
 
 /**
- * Delete a storage location
+ * Archive a storage location
  * Requires admin role (enforced by handler via requireAdmin())
- * Checks for references before deleting
+ * Sets archived flag instead of deleting
  */
 export async function deleteStorageLocation(
   familyId: string,
   context: UserContext,
   locationId: string
 ): Promise<void> {
-  logger.info('Deleting storage location', {
+  logger.info('Archiving storage location', {
     familyId: familyId,
     memberId: context.memberId,
     locationId,
@@ -162,7 +162,7 @@ export async function deleteStorageLocation(
 
   await deleteStorageLocationRepo(familyId, locationId);
   
-  logger.info('Storage location deleted', {
+  logger.info('Storage location archived', {
     familyId: familyId,
     locationId,
   });
