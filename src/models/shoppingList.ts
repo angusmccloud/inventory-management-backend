@@ -48,6 +48,7 @@ export class ShoppingListModel {
       storeId: data.storeId || null,
       status,
       quantity: data.quantity || null,
+      unit: data.unit || null,
       notes: data.notes || null,
       version: 1,
       ttl: null,
@@ -188,6 +189,7 @@ export class ShoppingListModel {
       name?: string;
       storeId?: string | null;
       quantity?: number | null;
+      unit?: string | null;
       notes?: string | null;
     }
   ): Promise<ShoppingListItem> {
@@ -225,6 +227,12 @@ export class ShoppingListModel {
     if (updates.quantity !== undefined) {
       updateParts.push('quantity = :quantity');
       expressionValues[':quantity'] = updates.quantity;
+    }
+
+    if (updates.unit !== undefined) {
+      updateParts.push('#unit = :unit');
+      expressionNames['#unit'] = 'unit';
+      expressionValues[':unit'] = updates.unit;
     }
 
     if (updates.notes !== undefined) {

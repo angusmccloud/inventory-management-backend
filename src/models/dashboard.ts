@@ -178,7 +178,7 @@ export class DashboardModel {
     const now = new Date().toISOString();
     
     // Build update expression dynamically
-    const updates: string[] = [];
+    const setUpdates: string[] = [];
     const attributeNames: Record<string, string> = {};
     const attributeValues: Record<string, any> = {
       ':updatedAt': now,
@@ -186,30 +186,27 @@ export class DashboardModel {
     };
     
     if (input.title !== undefined) {
-      updates.push('#title = :title');
+      setUpdates.push('#title = :title');
       attributeNames['#title'] = 'title';
       attributeValues[':title'] = input.title;
     }
     
     if (input.locationIds !== undefined) {
-      updates.push('locationIds = :locationIds');
+      setUpdates.push('locationIds = :locationIds');
       attributeValues[':locationIds'] = input.locationIds;
-      // Remove itemIds if switching to location-based
-      updates.push('REMOVE itemIds');
     }
     
     if (input.itemIds !== undefined) {
-      updates.push('itemIds = :itemIds');
+      setUpdates.push('itemIds = :itemIds');
       attributeValues[':itemIds'] = input.itemIds;
-      // Remove locationIds if switching to item-based
-      updates.push('REMOVE locationIds');
     }
     
-    updates.push('updatedAt = :updatedAt');
-    updates.push('#version = #version + :increment');
+    setUpdates.push('updatedAt = :updatedAt');
+    setUpdates.push('#version = #version + :increment');
     attributeNames['#version'] = 'version';
     
-    const updateExpression = `SET ${updates.join(', ')}`;
+    // Build update expression
+    const updateExpression = `SET ${setUpdates.join(', ')}`;
     
     try {
       const result = await docClient.send(
@@ -384,5 +381,39 @@ export class DashboardModel {
     }
     
     return { familyId, randomPart };
+  }
+
+  /**
+   * Increment dashboard access count and update last accessed timestamp
+   * 
+   * @param dashboardId - Dashboard ID to increment access count for
+   * @throws Error if update fails
+   */
+  static async incrementAccessCount(dashboardId: string): Promise<void> {
+    const { familyId } = this.parseDashboardId(dashboardId);
+    const now = new Date().toISOString();
+
+    try {
+      await docClient.send(
+        new UpdateCommand({
+          TableName: TABLE_NAME,
+          Key: {
+            PK: `FAMILY#${familyId}`,
+            SK: `DASHBOARD#${dashboardId}`,
+          },
+          UpdateExpression: 'SET accessCount = if_not_exists(accessCount, :zero) + :one, lastAccessedAt = :now',
+          ExpressionAttributeValues: {
+            ':zero': 0,
+            ':one': 1,
+            ':now': now,
+          },
+        })
+      );
+
+      logger.info('Dashboard access count incremented', { dashboardId });
+    } catch (error) {
+      logger.error('Failed to increment dashboard access count', error as Error, { dashboardId });
+      // Don't throw - this is analytics tracking, shouldn't fail the request
+    }
   }
 }

@@ -52,6 +52,7 @@ export class ShoppingListService {
   ): Promise<AddToShoppingListResult> {
     let itemName = request.name;
     let storeId = request.storeId;
+    let unit = request.unit;
 
     // If itemId provided, get inventory item details
     if (request.itemId) {
@@ -75,7 +76,7 @@ export class ShoppingListService {
         }
       }
 
-      // Get inventory item to populate name and store
+      // Get inventory item to populate name, store, and unit
       const inventoryItem = await InventoryItemModel.getById(familyId, request.itemId);
       if (!inventoryItem) {
         throw new Error('INVENTORY_ITEM_NOT_FOUND');
@@ -86,6 +87,9 @@ export class ShoppingListService {
 
       // Use inventory item's preferred store if not provided in request
       storeId = request.storeId !== undefined ? request.storeId : inventoryItem.preferredStoreId;
+      
+      // Use inventory item's unit if not provided in request
+      unit = request.unit !== undefined ? request.unit : inventoryItem.unit;
     }
 
     // Validate we have a name
@@ -98,6 +102,7 @@ export class ShoppingListService {
       ...request,
       name: itemName,
       storeId: storeId || null,
+      unit: unit || null,
     });
 
     logger.info('Added item to shopping list', {
@@ -184,6 +189,7 @@ export class ShoppingListService {
         name: request.name,
         storeId: request.storeId,
         quantity: request.quantity,
+        unit: request.unit,
         notes: request.notes,
       });
 

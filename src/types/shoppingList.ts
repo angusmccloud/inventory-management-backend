@@ -30,6 +30,7 @@ export interface ShoppingListItem {
   storeName?: string | null; // Denormalized store name (for display)
   status: ShoppingListStatus; // Purchase status
   quantity: number | null; // Optional quantity to purchase (integer > 0)
+  unit: string | null; // Optional unit of measurement (e.g., "oz", "lbs", "count")
   notes: string | null; // Optional notes (0-500 characters)
   
   // Concurrency control (NEW in 002-shopping-lists)
@@ -62,6 +63,7 @@ export const ShoppingListItemSchema = z.object({
   storeId: z.string().uuid().nullable(),
   status: z.enum(['pending', 'purchased']),
   quantity: z.number().int().positive().nullable(),
+  unit: z.string().max(50).nullable(),
   notes: z.string().max(500).nullable(),
   version: z.number().int().min(1),
   ttl: z.number().int().nullable(),
@@ -83,6 +85,7 @@ export const CreateShoppingListItemSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   storeId: z.string().uuid().nullable().optional(),
   quantity: z.number().int().positive().nullable().optional(),
+  unit: z.string().max(50).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
   force: z.boolean().optional().default(false),
 }).refine(
@@ -99,6 +102,7 @@ export const UpdateShoppingListItemSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   storeId: z.string().uuid().nullable().optional(),
   quantity: z.number().int().positive().nullable().optional(),
+  unit: z.string().max(50).nullable().optional(),
   notes: z.string().max(500).nullable().optional(),
   version: z.number().int().min(1), // Required for optimistic locking
 });

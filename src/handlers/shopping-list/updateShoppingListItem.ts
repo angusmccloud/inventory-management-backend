@@ -6,7 +6,7 @@
 
 import { APIGatewayProxyHandler } from 'aws-lambda';
 import { ShoppingListService } from '../../services/shoppingListService';
-import { UpdateShoppingListItemSchema } from '../../types/shoppingList';
+import { UpdateShoppingListItemSchema, ShoppingListItem } from '../../types/shoppingList';
 import { StoreModel } from '../../models/store';
 import { 
   okResponse, 
@@ -100,11 +100,12 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
     }
 
     // Add inventoryNotes if item is linked to inventory
+    let responseItem: ShoppingListItem & { inventoryNotes?: string | null } = itemWithStoreName;
     if (result.item!.itemId) {
       try {
         const { InventoryItemModel } = await import('../../models/inventory');
         const inventoryItem = await InventoryItemModel.getById(familyId, result.item!.itemId);
-        itemWithStoreName = {
+        responseItem = {
           ...itemWithStoreName,
           inventoryNotes: inventoryItem?.notes || null,
         };
@@ -124,7 +125,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 
     logLambdaCompletion('updateShoppingListItem', Date.now() - startTime, context.awsRequestId);
 
-    return okResponse(itemWithStoreName);
+    return okResponse(responseItem);
   } catch (error) {
     logger.error('Failed to update shopping list item', error as Error);
     return handleError(error);

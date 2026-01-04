@@ -184,6 +184,7 @@ export class SuggestionService {
           storeName: item.preferredStoreName || null,
           status: 'pending' as const, // Use status not isPurchased
           quantity: 1, // Default quantity
+          unit: item.unit || null, // Use unit from inventory item
           notes: `Added from suggestion by ${suggestion.suggestedByName}`,
           addedBy: reviewedBy,
           version: 1,
