@@ -401,6 +401,27 @@ Resources:
             Path: /health
             Method: GET
 
+  # POST /contact - Public contact form endpoint (no auth)
+  ContactFormFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-contact-form-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/contactForm.handler
+      Description: Public contact form endpoint that sends email via SES
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !If [HasSESEmail, !Ref SESFromEmail, '']
+          CONTACT_RECIPIENT: 'connort@gmail.com'
+      Events:
+        ContactFormApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /contact
+            Method: POST
+
   # Lambda Authorizer Function
   AuthorizerFunction:
     Type: AWS::Serverless::Function
