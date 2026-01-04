@@ -19,7 +19,6 @@ export const handler = async (
   if (handleWarmup(event, context)) {
     return warmupResponse();
   }
-
   try {
     if (!event.body) {
       return badRequestResponse('Missing request body');

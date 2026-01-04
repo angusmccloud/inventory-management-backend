@@ -421,6 +421,8 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /contact
             Method: POST
+            Auth:
+              Authorizer: NONE
 
   # Lambda Authorizer Function
   AuthorizerFunction:
