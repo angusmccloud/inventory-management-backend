@@ -133,8 +133,8 @@ export class InventoryItemModel {
 
       const items = (result.Items || []) as InventoryItem[];
       
-      // Filter items where quantity < threshold
-      return items.filter((item) => item.quantity < item.lowStockThreshold);
+      // Filter items where quantity is less than or equal to the threshold
+      return items.filter((item) => item.quantity <= item.lowStockThreshold);
     } catch (error) {
       logger.error('Failed to query low-stock items', error as Error, { familyId });
       throw error;
@@ -258,6 +258,6 @@ export class InventoryItemModel {
    * Check if item is below threshold (low stock)
    */
   static isLowStock(item: InventoryItem): boolean {
-    return item.quantity < item.lowStockThreshold && item.status === 'active';
+    return item.quantity <= item.lowStockThreshold && item.status === 'active';
   }
 }

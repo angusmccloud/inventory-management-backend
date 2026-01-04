@@ -382,38 +382,4 @@ export class DashboardModel {
     
     return { familyId, randomPart };
   }
-
-  /**
-   * Increment dashboard access count and update last accessed timestamp
-   * 
-   * @param dashboardId - Dashboard ID to increment access count for
-   * @throws Error if update fails
-   */
-  static async incrementAccessCount(dashboardId: string): Promise<void> {
-    const { familyId } = this.parseDashboardId(dashboardId);
-    const now = new Date().toISOString();
-
-    try {
-      await docClient.send(
-        new UpdateCommand({
-          TableName: TABLE_NAME,
-          Key: {
-            PK: `FAMILY#${familyId}`,
-            SK: `DASHBOARD#${dashboardId}`,
-          },
-          UpdateExpression: 'SET accessCount = if_not_exists(accessCount, :zero) + :one, lastAccessedAt = :now',
-          ExpressionAttributeValues: {
-            ':zero': 0,
-            ':one': 1,
-            ':now': now,
-          },
-        })
-      );
-
-      logger.info('Dashboard access count incremented', { dashboardId });
-    } catch (error) {
-      logger.error('Failed to increment dashboard access count', error as Error, { dashboardId });
-      // Don't throw - this is analytics tracking, shouldn't fail the request
-    }
-  }
 }

@@ -13,7 +13,6 @@ import {
   PutCommand,
   GetCommand,
   UpdateCommand,
-  DeleteCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
@@ -28,7 +27,6 @@ import type {
   UpdateStoreRequest,
 } from './schemas';
 import {
-  ReferenceExistsError,
   VersionConflictError,
   NotFoundError,
 } from './errors';
