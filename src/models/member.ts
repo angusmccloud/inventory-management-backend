@@ -33,6 +33,10 @@ export class MemberModel {
       email: input.email,
       name: input.name,
       role: input.role,
+      // notification fields (optional)
+      notificationPreferences: input.notificationPreferences,
+      unsubscribeAllEmail: input.unsubscribeAllEmail ?? false,
+      timezone: input.timezone,
       status: 'active',
       version: 1, // Initialize version for optimistic locking
       entityType: 'Member',
@@ -131,7 +135,7 @@ export class MemberModel {
   static async update(
     familyId: string,
     memberId: string,
-    updates: Partial<Pick<Member, 'name' | 'email' | 'role' | 'status'>>
+    updates: Partial<Pick<Member, 'name' | 'email' | 'role' | 'status' | 'notificationPreferences' | 'unsubscribeAllEmail' | 'timezone'>>
   ): Promise<Member> {
     const now = new Date().toISOString();
 
@@ -162,6 +166,24 @@ export class MemberModel {
         updateExpression.push('#status = :status');
         expressionAttributeNames['#status'] = 'status';
         expressionAttributeValues[':status'] = updates.status;
+      }
+
+      if (updates.notificationPreferences !== undefined) {
+        updateExpression.push('#notificationPreferences = :notificationPreferences');
+        expressionAttributeNames['#notificationPreferences'] = 'notificationPreferences';
+        expressionAttributeValues[':notificationPreferences'] = updates.notificationPreferences;
+      }
+
+      if (updates.unsubscribeAllEmail !== undefined) {
+        updateExpression.push('#unsubscribeAllEmail = :unsubscribeAllEmail');
+        expressionAttributeNames['#unsubscribeAllEmail'] = 'unsubscribeAllEmail';
+        expressionAttributeValues[':unsubscribeAllEmail'] = updates.unsubscribeAllEmail;
+      }
+
+      if (updates.timezone !== undefined) {
+        updateExpression.push('#timezone = :timezone');
+        expressionAttributeNames['#timezone'] = 'timezone';
+        expressionAttributeValues[':timezone'] = updates.timezone;
       }
 
       const keys = KeyBuilder.member(familyId, memberId);
@@ -195,7 +217,7 @@ export class MemberModel {
   static async updateWithVersion(
     familyId: string,
     memberId: string,
-    updates: Partial<Pick<Member, 'name' | 'email' | 'role' | 'status'>>,
+    updates: Partial<Pick<Member, 'name' | 'email' | 'role' | 'status' | 'notificationPreferences' | 'unsubscribeAllEmail' | 'timezone'>>,
     expectedVersion: number
   ): Promise<Member> {
     const now = new Date().toISOString();
@@ -234,6 +256,24 @@ export class MemberModel {
         updateExpression.push('#status = :status');
         expressionAttributeNames['#status'] = 'status';
         expressionAttributeValues[':status'] = updates.status;
+      }
+
+      if (updates.notificationPreferences !== undefined) {
+        updateExpression.push('#notificationPreferences = :notificationPreferences');
+        expressionAttributeNames['#notificationPreferences'] = 'notificationPreferences';
+        expressionAttributeValues[':notificationPreferences'] = updates.notificationPreferences;
+      }
+
+      if (updates.unsubscribeAllEmail !== undefined) {
+        updateExpression.push('#unsubscribeAllEmail = :unsubscribeAllEmail');
+        expressionAttributeNames['#unsubscribeAllEmail'] = 'unsubscribeAllEmail';
+        expressionAttributeValues[':unsubscribeAllEmail'] = updates.unsubscribeAllEmail;
+      }
+
+      if (updates.timezone !== undefined) {
+        updateExpression.push('#timezone = :timezone');
+        expressionAttributeNames['#timezone'] = 'timezone';
+        expressionAttributeValues[':timezone'] = updates.timezone;
       }
 
       const keys = KeyBuilder.member(familyId, memberId);

@@ -21,6 +21,7 @@ Globals:
         TABLE_NAME: !Ref InventoryTable
         NODE_ENV: !Ref Environment
         LOG_LEVEL: INFO
+        SES_FROM_EMAIL: !Ref SESFromEmail
         WARMUP_ENABLED: "true"
     Tracing: Active
 
@@ -348,6 +349,11 @@ Resources:
             UserPoolArn: !GetAtt UserPool.Arn
             Identity:
               Header: Authorization
+          LambdaAuthorizer:
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            FunctionPayloadType: TOKEN
+            Identity:
+              Header: Authorization
       GatewayResponses:
         UNAUTHORIZED:
           StatusCode: 401
@@ -400,6 +406,121 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /health
             Method: GET
+            Auth:
+              Authorizer: NONE
+
+  ##########################################################################
+  # Immediate Dispatcher - scheduled job to process IMMEDIATE notifications
+  ##########################################################################
+  ImmediateDispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'notif-imd-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/notifications/immediateDispatcher.handler
+      Description: Processes immediate notifications and marks delivery ledger to avoid duplicates
+      Role: !GetAtt LambdaExecutionRole.Arn
+      # Schedule every 15 minutes
+      Events:
+        ImmediateDispatcherSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: 'rate(15 minutes)'
+            Enabled: true
+
+  # Explicit EventBridge rule + permission for Immediate Dispatcher (redundant with SAM Schedule but ensures explicit control)
+  ImmediateDispatcherRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-immediate-dispatcher-${Environment}'
+      Description: 'Scheduled rule to trigger Immediate Dispatcher every 15 minutes'
+      ScheduleExpression: rate(15 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ImmediateDispatcherFunction.Arn
+          Id: ImmediateDispatcherTarget
+
+  ImmediateDispatcherPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ImmediateDispatcherFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ImmediateDispatcherRule.Arn
+
+  # Daily Digest Handler - Runs daily at 9:00 AM UTC
+  DailyDigestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'notif-daily-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/notifications/dailyDigest.handler
+      Description: Sends daily digest emails with outstanding notifications
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      Events:
+        DailyDigestSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 14 * * ? *)'
+            Enabled: true
+            Description: Daily digest at 9:00 AM EST (14:00 UTC)
+
+  DailyDigestRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-daily-digest-${Environment}'
+      Description: 'Scheduled rule to trigger Daily Digest at 9:00 AM EST'
+      ScheduleExpression: cron(0 14 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt DailyDigestFunction.Arn
+          Id: DailyDigestTarget
+
+  DailyDigestPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DailyDigestFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyDigestRule.Arn
+
+  # Weekly Digest Handler - Runs Mondays at 9:00 AM UTC
+  WeeklyDigestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'notif-weekly-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/notifications/weeklyDigest.handler
+      Description: Sends weekly digest emails with outstanding notifications
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 180
+      Events:
+        WeeklyDigestSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 14 ? * MON *)'
+            Enabled: true
+            Description: Weekly digest on Monday at 9:00 AM EST (14:00 UTC)
+
+  WeeklyDigestRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-weekly-digest-${Environment}'
+      Description: 'Scheduled rule to trigger Weekly Digest on Monday at 9:00 AM EST'
+      ScheduleExpression: cron(0 14 ? * MON *)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt WeeklyDigestFunction.Arn
+          Id: WeeklyDigestTarget
+
+  WeeklyDigestPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WeeklyDigestFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WeeklyDigestRule.Arn
 
   # POST /contact - Public contact form endpoint (no auth)
   ContactFormFunction:
@@ -424,6 +545,45 @@ Resources:
             Auth:
               Authorizer: NONE
 
+  # POST /notifications/unsubscribe - Public unsubscribe endpoint that accepts a token
+  UnsubscribeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'notif-unsub-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/notifications/unsubscribe.handler
+      Description: Apply unsubscribe for a member given a signed token
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        UnsubscribeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /notifications/unsubscribe
+            Method: POST
+            Auth:
+              Authorizer: NONE
+
+  # GET /notifications/delivery-queue - Admin endpoint to preview pending deliveries
+  QueuePreviewFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'notif-queue-preview-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/notifications/queuePreview.handler
+      Description: Admin endpoint to preview pending notification deliveries
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      Events:
+        QueuePreviewApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /notifications/delivery-queue
+            Method: GET
+            Auth:
+              Authorizer: LambdaAuthorizer
+
   # Lambda Authorizer Function
   AuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -436,6 +596,14 @@ Resources:
       Environment:
         Variables:
           COGNITO_USER_POOL_ARN: !GetAtt UserPool.Arn
+
+  AuthorizerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${InventoryApi}/*'
 
   ##########################################################################
   #  User Story 1: Family and Inventory Management Functions
@@ -717,6 +885,33 @@ Resources:
             RestApiId: !Ref InventoryApi
             Path: /families/{familyId}/notifications/{notificationId}/resolve
             Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # GET/PATCH /families/{familyId}/members/{memberId}/preferences/notifications - Member notification preferences
+  PreferencesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'notif-prefs-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/notifications/preferences.handler
+      Description: Get or update member notification preferences
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        PreferencesGetApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/members/{memberId}/preferences/notifications
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        PreferencesPatchApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/members/{memberId}/preferences/notifications
+            Method: PATCH
             Auth:
               Authorizer: CognitoAuthorizer
 
@@ -1672,6 +1867,133 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt LambdaWarmupRule.Arn
+
+  ##########################################################################
+  #  CloudWatch Alarms - Notification Jobs Monitoring (T031)
+  ##########################################################################
+
+  # Alarm for high error rate on immediate dispatcher
+  ImmediateDispatcherErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-immediate-dispatcher-errors-${Environment}'
+      AlarmDescription: 'Alert when immediate dispatcher has high error count (SC-002 compliance)'
+      MetricName: Errors
+      Namespace: InventoryHQ/Notifications
+      Statistic: Sum
+      Period: 900  # 15 minutes (matches job frequency)
+      EvaluationPeriods: 2  # Alert after 2 consecutive periods (30 minutes)
+      Threshold: 5  # Alert if > 5 errors in 15 minutes
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: JobType
+          Value: IMMEDIATE
+      TreatMissingData: notBreaching
+
+  # Alarm for Lambda execution errors on immediate dispatcher
+  ImmediateDispatcherLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-immediate-dispatcher-lambda-errors-${Environment}'
+      AlarmDescription: 'Alert when immediate dispatcher Lambda fails'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 900  # 15 minutes
+      EvaluationPeriods: 1
+      Threshold: 1  # Alert on any Lambda error
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ImmediateDispatcherFunction
+      TreatMissingData: notBreaching
+
+  # Alarm for high error rate on daily digest
+  DailyDigestErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-daily-digest-errors-${Environment}'
+      AlarmDescription: 'Alert when daily digest has high error count (SC-003 compliance)'
+      MetricName: Errors
+      Namespace: InventoryHQ/Notifications
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 10  # Alert if > 10 errors in 1 hour
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: JobType
+          Value: DAILY
+      TreatMissingData: notBreaching
+
+  # Alarm for Lambda execution errors on daily digest
+  DailyDigestLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-daily-digest-lambda-errors-${Environment}'
+      AlarmDescription: 'Alert when daily digest Lambda fails'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 1  # Alert on any Lambda error
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DailyDigestFunction
+      TreatMissingData: notBreaching
+
+  # Alarm for high error rate on weekly digest
+  WeeklyDigestErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-weekly-digest-errors-${Environment}'
+      AlarmDescription: 'Alert when weekly digest has high error count (SC-003 compliance)'
+      MetricName: Errors
+      Namespace: InventoryHQ/Notifications
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 10  # Alert if > 10 errors in 1 hour
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: JobType
+          Value: WEEKLY
+      TreatMissingData: notBreaching
+
+  # Alarm for Lambda execution errors on weekly digest
+  WeeklyDigestLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-weekly-digest-lambda-errors-${Environment}'
+      AlarmDescription: 'Alert when weekly digest Lambda fails'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 1
+      Threshold: 1  # Alert on any Lambda error
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref WeeklyDigestFunction
+      TreatMissingData: notBreaching
+
+  # Alarm for unusually long job duration (performance degradation)
+  NotificationJobDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-notification-job-duration-${Environment}'
+      AlarmDescription: 'Alert when notification jobs are taking too long (performance issue)'
+      MetricName: JobDuration
+      Namespace: InventoryHQ/Notifications
+      Statistic: Average
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 2
+      Threshold: 60000  # Alert if average duration > 60 seconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
 
   ##########################################################################
   #  CloudWatch Alarms - NFC Security Monitoring (T056)

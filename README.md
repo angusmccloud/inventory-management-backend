@@ -593,3 +593,6 @@ HealthCheckFunction:
 ## Contributing
 
 Follow the TypeScript strict mode guidelines and ensure all tests pass before committing.
+
+## Deploying to Prod:
+sam deploy --config-env prod

@@ -29,14 +29,16 @@ export default {
   // Module file extensions
   moduleFileExtensions: ['ts', 'js', 'json'],
   
-  // Module name mapper for absolute imports
+  // Module name mapper for absolute imports and .js extension resolution
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@models/(.*)$': '<rootDir>/src/models/$1',
     '^@services/(.*)$': '<rootDir>/src/services/$1',
     '^@handlers/(.*)$': '<rootDir>/src/handlers/$1',
     '^@lib/(.*)$': '<rootDir>/src/lib/$1',
-    '^@types/(.*)$': '<rootDir>/src/types/$1'
+    '^@types/(.*)$': '<rootDir>/src/types/$1',
+    // Handle .js extension in imports (for ESM compatibility)
+    '^(\\.{1,2}/.*)\\.js$': '$1'
   },
   
   // Coverage configuration

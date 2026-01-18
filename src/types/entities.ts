@@ -87,10 +87,22 @@ export interface Member extends BaseEntity {
   status: MemberStatus;
   version: number; // Optimistic locking version (starts at 1)
   themePreference?: 'light' | 'dark' | 'auto'; // User's theme preference (optional, defaults to 'auto')
+  // Notification preference matrix stored on the Member record.
+  // Keys are of the form "{notificationType}:{channel}" and values are frequency enums.
+  notificationPreferences?: Record<string, Frequency>;
+  // Quick opt-out for all email channels
+  unsubscribeAllEmail?: boolean;
+  // Member timezone (IANA) used to schedule digests
+  timezone?: string;
   entityType: 'Member';
   GSI1PK?: string; // MEMBER#{memberId}
   GSI1SK?: string; // FAMILY#{familyId}
 }
+
+/**
+ * Frequency enum used by notification preferences
+ */
+export type Frequency = 'NONE' | 'IMMEDIATE' | 'DAILY' | 'WEEKLY';
 
 /**
  * InventoryItem Entity - Tracked consumable good
@@ -282,6 +294,10 @@ export interface MemberInput {
   email: string;
   name: string;
   role: MemberRole;
+  // Optional initial notification settings when creating a member
+  notificationPreferences?: Record<string, Frequency>;
+  unsubscribeAllEmail?: boolean;
+  timezone?: string;
 }
 
 export interface InventoryItemInput {
