@@ -7,6 +7,8 @@ import { logger } from '../lib/logger';
 import { generateUUID } from '../lib/uuid';
 import { Suggestion, SuggestionType, KeyBuilder } from '../types/entities';
 import { ShoppingListItem } from '../types/shoppingList';
+import { NotificationEventModel } from '../models/notificationEvent';
+import { NotificationService } from './notificationService';
 
 const TABLE_NAME = getTableName();
 
@@ -250,6 +252,10 @@ export class SuggestionService {
           shoppingItemId,
         });
 
+        await NotificationService.resolveNotificationsForItem(familyId, item.itemId);
+
+        await this.notifySuggestionResponse(suggestion, 'approved', member);
+
         // Return updated suggestion
         return {
           ...suggestion,
@@ -394,6 +400,8 @@ export class SuggestionService {
           shoppingItemId,
         });
 
+        await this.notifySuggestionResponse(suggestion, 'approved', member);
+
         // Return updated suggestion
         return {
           ...suggestion,
@@ -450,7 +458,7 @@ export class SuggestionService {
         throw new Error('Only pending suggestions can be rejected');
       }
 
-      return await SuggestionModel.updateStatus(
+      const updated = await SuggestionModel.updateStatus(
         familyId,
         suggestionId,
         'rejected',
@@ -458,6 +466,10 @@ export class SuggestionService {
         suggestion.version,
         rejectionNotes
       );
+
+      await this.notifySuggestionResponse(updated, 'rejected', member);
+
+      return updated;
     } catch (error) {
       logger.error('Failed to reject suggestion', error as Error, { familyId, suggestionId });
       throw error;
@@ -477,6 +489,38 @@ export class SuggestionService {
     } catch (error) {
       logger.error('Failed to validate item name uniqueness', error as Error, { familyId, itemName });
       throw error;
+    }
+  }
+
+  private static async notifySuggestionResponse(
+    suggestion: Suggestion,
+    decision: 'approved' | 'rejected',
+    reviewer: { memberId: string; name: string }
+  ): Promise<void> {
+    const itemName = suggestion.itemNameSnapshot || suggestion.proposedItemName || undefined;
+
+    try {
+      await NotificationEventModel.createSuggestionResponse({
+        familyId: suggestion.familyId,
+        suggestionId: suggestion.suggestionId,
+        suggestionType: suggestion.type,
+        suggestionDecision: decision,
+        suggestedBy: suggestion.suggestedBy,
+        suggestedByName: suggestion.suggestedByName,
+        reviewedBy: reviewer.memberId,
+        reviewedByName: reviewer.name,
+        itemName,
+        sourceContext: {
+          suggestionType: suggestion.type,
+          decision,
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to create suggestion response notification', error as Error, {
+        suggestionId: suggestion.suggestionId,
+        familyId: suggestion.familyId,
+        decision,
+      });
     }
   }
 }

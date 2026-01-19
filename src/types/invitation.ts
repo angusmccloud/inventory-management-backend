@@ -8,7 +8,7 @@ import { z } from 'zod';
 // ============================================
 // Invitation Status
 // ============================================
-export const InvitationStatusSchema = z.enum(['pending', 'accepted', 'expired', 'revoked']);
+export const InvitationStatusSchema = z.enum(['pending', 'accepted', 'expired', 'revoked', 'declined']);
 export type InvitationStatus = z.infer<typeof InvitationStatusSchema>;
 
 // ============================================
@@ -42,6 +42,10 @@ export const InvitationSchema = z.object({
   acceptedAt: z.string().datetime().nullable(),
   revokedBy: z.string().uuid().nullable(),
   revokedAt: z.string().datetime().nullable(),
+  declineReason: z.string().max(280).nullable().optional(),
+  decisionSource: z.enum(['link', 'pending-detection']).optional(),
+  lastDecisionId: z.string().uuid().nullable().optional(),
+  consumedAt: z.string().datetime().nullable().optional(),
   
   // Standard fields
   entityType: z.literal('Invitation'),
@@ -80,6 +84,8 @@ export const InvitationKeysSchema = z.object({
   SK: z.string().regex(/^INVITATION#[0-9a-f-]{36}$/),
   GSI1PK: z.string().regex(/^INVITATION_TOKEN#.+$/),
   GSI1SK: z.string().regex(/^INVITATION#[0-9a-f-]{36}$/),
+  GSI2PK: z.string().regex(/^IDENTITY#.+$/).optional(),
+  GSI2SK: z.string().regex(/^STATUS#[A-Z]+#(EXPIRES|UPDATED)#.+#INVITE#.+$/).optional(),
 });
 
 export type InvitationKeys = z.infer<typeof InvitationKeysSchema>;
@@ -129,4 +135,3 @@ export function maskToken(token: string): string {
   if (!uuid) return '***';
   return `${uuid.substring(0, 8)}...`;
 }
-

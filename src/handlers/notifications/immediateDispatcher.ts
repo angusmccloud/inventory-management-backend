@@ -11,7 +11,12 @@ import { publishJobMetrics, logJobEvent, JobMetrics } from '../../lib/monitoring
 import { generateUUID } from '../../lib/uuid';
 import { MemberModel } from '../../models/member';
 import { FamilyModel } from '../../models/family';
-import { NotificationModel, LowStockNotification } from '../../models/notification';
+import { LowStockNotification } from '../../models/notification';
+import {
+  NotificationEventModel,
+  NotificationEvent,
+  SuggestionResponseNotification,
+} from '../../models/notificationEvent';
 import { InventoryItemModel } from '../../models/inventory';
 import { DEFAULT_FREQUENCY, normalizePreferenceValue } from '../../services/notifications/defaults';
 import { createUnsubscribeToken } from '../../lib/unsubscribeToken';
@@ -48,8 +53,9 @@ export const handler: ScheduledHandler = async (event, context) => {
     for (const family of families) {
       const familyId = family.familyId;
       const members = await MemberModel.listByFamily(familyId);
-      const notifications = await NotificationModel.listActive(familyId);
-      const unitOverrides = await resolveUnitsForNotifications(familyId, notifications);
+      const notifications = await NotificationEventModel.listActive(familyId);
+      const lowStockNotifications = notifications.filter(isLowStockNotification);
+      const unitOverrides = await resolveUnitsForNotifications(familyId, lowStockNotifications);
 
       for (const member of members) {
         if (!member.email || member.unsubscribeAllEmail) {
@@ -57,8 +63,12 @@ export const handler: ScheduledHandler = async (event, context) => {
           continue;
         }
 
-        const eligibleNotifications: LowStockNotification[] = [];
+        const eligibleByType: Record<string, NotificationEvent[]> = {};
         for (const notification of notifications) {
+          if ('recipientId' in notification && notification.recipientId && notification.recipientId !== member.memberId) {
+            continue;
+          }
+
           const typeKey = normalizeNotificationType(notification.type);
           const preferenceKey = `${typeKey}:EMAIL`;
           const rawPreference = member.notificationPreferences?.[preferenceKey];
@@ -83,51 +93,83 @@ export const handler: ScheduledHandler = async (event, context) => {
             continue;
           }
 
-          eligibleNotifications.push(notification as LowStockNotification);
+          if (!eligibleByType[typeKey]) {
+            eligibleByType[typeKey] = [];
+          }
+          eligibleByType[typeKey].push(notification);
         }
 
-        if (eligibleNotifications.length === 0) {
+        const eligibleTypes = Object.keys(eligibleByType);
+        if (eligibleTypes.length === 0) {
           metrics.skippedCount++;
           continue;
         }
 
         metrics.targetUserCount++;
 
-        const { title, message } = buildImmediateBatchMessage(eligibleNotifications, unitOverrides);
         const links = buildPreferenceLinks(familyId, member.memberId);
 
-        const result = await sendNotification(
-          familyId,
-          eligibleNotifications[0]!.notificationId,
-          'EMAIL',
-          'IMMEDIATE',
-          {
-            to: member.email,
-            title,
-            message,
-            unsubscribeUrl: links.unsubscribeUrl,
-            preferencesUrl: links.preferencesUrl,
-          },
-          context.awsRequestId,
-          member.memberId,
-          { skipLedger: true }
-        );
-
-        if (result.success) {
-          for (const notification of eligibleNotifications) {
-            await markDelivered(
-              familyId,
-              notification.notificationId,
-              'EMAIL',
-              'IMMEDIATE',
-              new Date().toISOString(),
-              member.memberId
-            );
+        for (const typeKey of eligibleTypes) {
+          const groupedNotifications = eligibleByType[typeKey] || [];
+          if (groupedNotifications.length === 0) {
+            continue;
           }
-          metrics.emailSentCount++;
-          processed++;
-        } else {
-          metrics.errorCount++;
+
+          const payload = buildImmediateNotificationPayload(
+            typeKey,
+            groupedNotifications,
+            unitOverrides
+          );
+
+          if (!payload) {
+            continue;
+          }
+
+          const result = await sendNotification(
+            familyId,
+            payload.notificationId,
+            'EMAIL',
+            'IMMEDIATE',
+            {
+              to: member.email,
+              title: payload.title,
+              message: payload.message,
+              unsubscribeUrl: links.unsubscribeUrl,
+              preferencesUrl: links.preferencesUrl,
+            },
+            context.awsRequestId,
+            member.memberId,
+            { skipLedger: true }
+          );
+
+          if (result.success) {
+            for (const notification of groupedNotifications) {
+              await markDelivered(
+                familyId,
+                notification.notificationId,
+                'EMAIL',
+                'IMMEDIATE',
+                new Date().toISOString(),
+                member.memberId
+              );
+            }
+            if (typeKey === 'SUGGESTION') {
+              for (const notification of groupedNotifications) {
+                try {
+                  await NotificationEventModel.resolve(familyId, notification.notificationId);
+                } catch (error) {
+                  logger.error('Failed to resolve suggestion notification', error as Error, {
+                    familyId,
+                    notificationId: notification.notificationId,
+                  });
+                }
+              }
+            }
+            metrics.emailSentCount++;
+            processed++;
+          } else {
+            metrics.errorCount++;
+          }
         }
       }
     }
@@ -160,10 +202,14 @@ export const handler: ScheduledHandler = async (event, context) => {
 };
 
 function normalizeNotificationType(rawType: string): string {
-  return rawType
+  const normalized = rawType
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, '_')
     .toUpperCase();
+  if (normalized === 'SUGGESTION_RESPONSE') {
+    return 'SUGGESTION';
+  }
+  return normalized;
 }
 
 function buildNotificationMessage(notification: LowStockNotification, unitOverride?: string): string {
@@ -173,6 +219,36 @@ function buildNotificationMessage(notification: LowStockNotification, unitOverri
     return `Your inventory item "${itemName}" is low (${notification.currentQuantity} ${unit}).`;
   }
   return `Your inventory item "${itemName}" is low (${notification.currentQuantity}).`;
+}
+
+function buildSuggestionResponseLine(notification: SuggestionResponseNotification): string {
+  const decision =
+    notification.suggestionDecision === 'approved' ? 'approved' : 'rejected';
+  const action =
+    notification.suggestionType === 'add_to_shopping' ? 'add' : 'create';
+  const itemLabel = notification.itemName ? `"${notification.itemName}"` : 'an item';
+  return `Your suggestion to ${action} ${itemLabel} was ${decision}.`;
+}
+
+function buildSuggestionBatchMessage(
+  notifications: SuggestionResponseNotification[]
+): { title: string; message: string } {
+  if (notifications.length === 1) {
+    const single = notifications[0];
+    if (!single) {
+      return { title: 'Suggestion updates (0)', message: '' };
+    }
+    const title =
+      single.suggestionDecision === 'approved' ? 'Suggestion approved' : 'Suggestion rejected';
+    return {
+      title,
+      message: buildSuggestionResponseLine(single),
+    };
+  }
+
+  const title = `Suggestion updates (${notifications.length})`;
+  const lines = notifications.map(buildSuggestionResponseLine);
+  return { title, message: lines.join('\n') };
 }
 
 function buildImmediateBatchMessage(
@@ -213,6 +289,44 @@ async function resolveUnitsForNotifications(
   return unitByItemId;
 }
 
+function buildImmediateNotificationPayload(
+  typeKey: string,
+  notifications: NotificationEvent[],
+  unitOverrides: Record<string, string>
+): { notificationId: string; title: string; message: string } | null {
+  if (typeKey === 'LOW_STOCK') {
+    const lowStockNotifications = notifications.filter(isLowStockNotification);
+    const firstLowStock = lowStockNotifications[0];
+    if (!firstLowStock) return null;
+    const { title, message } = buildImmediateBatchMessage(lowStockNotifications, unitOverrides);
+    return {
+      notificationId: firstLowStock.notificationId,
+      title,
+      message,
+    };
+  }
+
+  if (typeKey === 'SUGGESTION') {
+    const suggestionNotifications = notifications.filter(isSuggestionResponseNotification);
+    const firstSuggestion = suggestionNotifications[0];
+    if (!firstSuggestion) return null;
+    const { title, message } = buildSuggestionBatchMessage(suggestionNotifications);
+    return {
+      notificationId: firstSuggestion.notificationId,
+      title,
+      message,
+    };
+  }
+
+  const fallback = notifications[0];
+  if (!fallback) return null;
+  return {
+    notificationId: fallback.notificationId,
+    title: 'New notification',
+    message: 'You have a new notification that needs your attention.',
+  };
+}
+
 function buildPreferenceLinks(familyId: string, memberId: string) {
   const secret = process.env['UNSUBSCRIBE_SECRET'] || '';
   let unsubscribeUrl: string | undefined;
@@ -233,6 +347,18 @@ function buildPreferenceLinks(familyId: string, memberId: string) {
     unsubscribeUrl,
     preferencesUrl: 'https://www.inventoryhq.io/settings?tab=notifications',
   };
+}
+
+function isLowStockNotification(
+  notification: NotificationEvent
+): notification is LowStockNotification {
+  return notification.type === 'low_stock';
+}
+
+function isSuggestionResponseNotification(
+  notification: NotificationEvent
+): notification is SuggestionResponseNotification {
+  return notification.type === 'suggestion_response';
 }
 
 export default handler;

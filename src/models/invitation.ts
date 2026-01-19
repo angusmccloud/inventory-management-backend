@@ -20,8 +20,67 @@ import {
   generateInvitationKeys,
   isInvitationExpired,
 } from '../types/invitation';
+import { normalizeEmail } from '../services/inviteMatching/identityMatcher';
 
 const TABLE_NAME = getTableName();
+
+export type PendingInvitationStatus = 'PENDING' | 'EXPIRED' | 'REVOKED';
+export type PendingInviteDecisionAction = 'ACCEPTED' | 'DECLINED';
+export type PendingInviteDecisionSource = 'pending-detection' | 'host-action';
+
+export interface PendingInvitation {
+  inviteId: string;
+  familyId: string;
+  familyName: string;
+  inviterName: string;
+  roleOffered: MemberRole;
+  expiresAt: string;
+  status: PendingInvitationStatus;
+  requiresSwitchConfirmation?: boolean;
+  message?: string;
+}
+
+export interface ExistingMembershipSummary {
+  familyId: string;
+  familyName: string;
+  role: MemberRole;
+  status: 'ACTIVE' | 'PENDING_SWITCH' | 'SUSPENDED';
+}
+
+export interface PendingInvitationList {
+  invites: PendingInvitation[];
+  existingMembership?: ExistingMembershipSummary;
+  decisionToken: string;
+}
+
+export interface InviteDecisionLogItem {
+  PK: string;
+  SK: string;
+  GSI1PK?: string;
+  GSI1SK?: string;
+  decisionId: string;
+  inviteId: string;
+  familyId: string;
+  actorUserId: string;
+  actorMemberId?: string;
+  targetEmail?: string;
+  targetPhone?: string;
+  action: PendingInviteDecisionAction;
+  source: PendingInviteDecisionSource;
+  message?: string;
+  createdAt: string;
+  auditCorrelationId: string;
+  entityType: 'InviteDecisionLog';
+}
+
+export interface PendingInviteDecisionResponse {
+  inviteId: string;
+  familyId: string;
+  action: PendingInviteDecisionAction;
+  membershipId: string | null;
+  auditId: string;
+  redirect: string;
+}
 
 /**
  * Create invitation input
@@ -55,6 +114,7 @@ export class InvitationModel {
     const ttl = Math.floor(new Date(input.expiresAt).getTime() / 1000) + ttlGraceSeconds;
 
     const keys = generateInvitationKeys(input.familyId, invitationId, input.token);
+    const normalizedEmail = normalizeEmail(input.email);
 
     const invitation: InvitationItem = {
       ...keys,
@@ -76,6 +136,11 @@ export class InvitationModel {
       createdAt: now,
       updatedAt: now,
     };
+
+    if (normalizedEmail) {
+      invitation.GSI2PK = `IDENTITY#${normalizedEmail}`;
+      invitation.GSI2SK = `STATUS#PENDING#EXPIRES#${input.expiresAt}#INVITE#${invitationId}`;
+    }
 
     try {
       await docClient.send(
@@ -234,6 +299,10 @@ export class InvitationModel {
         ':updatedAt': now,
       };
 
+      updateExpression.push('#GSI2SK = :gsi2sk');
+      expressionAttributeNames['#GSI2SK'] = 'GSI2SK';
+      expressionAttributeValues[':gsi2sk'] = `STATUS#${status.toUpperCase()}#UPDATED#${now}#INVITE#${invitationId}`;
+
       if (status === 'accepted' && updateFields?.acceptedBy) {
         updateExpression.push('#acceptedBy = :acceptedBy', '#acceptedAt = :acceptedAt');
         expressionAttributeNames['#acceptedBy'] = 'acceptedBy';
@@ -334,13 +403,14 @@ export class InvitationModel {
         new UpdateCommand({
           TableName: TABLE_NAME,
           Key: { PK: keys.PK, SK: keys.SK },
-          UpdateExpression: `SET #expiresAt = :expiresAt, #ttl = :ttl, #token = :token, #tokenSignature = :tokenSignature, #GSI1PK = :GSI1PK, #updatedAt = :updatedAt`,
+          UpdateExpression: `SET #expiresAt = :expiresAt, #ttl = :ttl, #token = :token, #tokenSignature = :tokenSignature, #GSI1PK = :GSI1PK, #GSI2SK = :GSI2SK, #updatedAt = :updatedAt`,
           ExpressionAttributeNames: {
             '#expiresAt': 'expiresAt',
             '#ttl': 'ttl',
             '#token': 'token',
             '#tokenSignature': 'tokenSignature',
             '#GSI1PK': 'GSI1PK',
+            '#GSI2SK': 'GSI2SK',
             '#updatedAt': 'updatedAt',
           },
           ExpressionAttributeValues: {
@@ -349,6 +419,7 @@ export class InvitationModel {
             ':token': newToken,
             ':tokenSignature': newTokenSignature,
             ':GSI1PK': newKeys.GSI1PK,
+            ':GSI2SK': `STATUS#PENDING#EXPIRES#${newExpiresAt}#INVITE#${invitationId}`,
             ':updatedAt': now,
           },
           ConditionExpression: 'attribute_exists(PK)',
@@ -378,4 +449,3 @@ export class InvitationModel {
     }
   }
 }
-

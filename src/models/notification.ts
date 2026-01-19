@@ -325,10 +325,16 @@ export class NotificationModel {
    */
   static async resolveByItemId(familyId: string, itemId: string): Promise<void> {
     try {
-      const activeNotification = await this.findActiveByItemId(familyId, itemId);
+      let notificationToResolve = await this.findActiveByItemId(familyId, itemId);
 
-      if (activeNotification) {
-        await this.updateStatus(familyId, activeNotification.notificationId, 'resolved');
+      if (!notificationToResolve) {
+        const acknowledgedNotifications = await this.listByStatus(familyId, 'acknowledged');
+        notificationToResolve =
+          acknowledgedNotifications.find((notification) => notification.itemId === itemId) || null;
+      }
+
+      if (notificationToResolve) {
+        await this.updateStatus(familyId, notificationToResolve.notificationId, 'resolved');
         logger.info('Notification resolved for item', { familyId, itemId });
       }
     } catch (error) {

@@ -95,7 +95,7 @@ export async function createInvitation(
  */
 export async function listInvitations(
   familyId: string,
-  status?: 'pending' | 'accepted' | 'expired' | 'revoked' | 'all'
+  status?: 'pending' | 'accepted' | 'expired' | 'revoked' | 'declined' | 'all'
 ): Promise<Invitation[]> {
   if (status === 'all') {
     return InvitationModel.listByFamily(familyId);
@@ -258,4 +258,3 @@ export async function resendInvitation(
 
   return updatedInvitation;
 }
-

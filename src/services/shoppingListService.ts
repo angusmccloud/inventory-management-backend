@@ -6,6 +6,7 @@
 
 import { ShoppingListModel } from '../models/shoppingList';
 import { InventoryItemModel } from '../models/inventory';
+import { NotificationService } from './notificationService';
 import { logger } from '../lib/logger';
 import {
   ShoppingListItem,
@@ -111,6 +112,10 @@ export class ShoppingListService {
       itemId: request.itemId,
       addedBy,
     });
+
+    if (item.itemId) {
+      await NotificationService.resolveNotificationsForItem(familyId, item.itemId);
+    }
 
     return {
       success: true,
@@ -307,4 +312,3 @@ export class ShoppingListService {
     });
   }
 }
-

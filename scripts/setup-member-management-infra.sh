@@ -245,7 +245,7 @@ if [ "$GSI_STATUS" == "ACTIVE" ]; then
     print_success "GSI1 index exists and is ACTIVE"
 else
     print_error "GSI1 index not found or not ACTIVE"
-    print_info "GSI1 should have been created in the parent feature (001-family-inventory-mvp)"
+    print_info "GSI1 should have been created in the parent feature (016-family-inventory-mvp)"
     print_info "Please ensure the SAM template includes GSI1 configuration"
 fi
 

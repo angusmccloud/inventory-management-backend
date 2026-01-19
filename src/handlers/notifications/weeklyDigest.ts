@@ -7,12 +7,12 @@
 
 import { ScheduledHandler } from 'aws-lambda';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../../lib/logger';
+import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion, Logger } from '../../lib/logger';
 import { handleWarmup, warmupResponse } from '../../lib/warmup';
 import { generateUUID } from '../../lib/uuid';
 import { MemberModel } from '../../models/member';
 import { FamilyModel } from '../../models/family';
-import { NotificationModel } from '../../models/notification';
+import { NotificationEventModel, NotificationEvent, SuggestionResponseNotification } from '../../models/notificationEvent';
 import { buildDigestEmail, DigestNotification } from '../../lib/email/templates/notificationDigest';
 import { publishJobMetrics, logJobEvent, JobMetrics } from '../../lib/monitoring/notificationMetrics';
 import { getFrontendUrl } from '../../config/domain';
@@ -61,7 +61,7 @@ export const handler: ScheduledHandler = async (event, context) => {
 
       metrics.targetUserCount += eligibleMembers.length;
 
-      const notifications = await NotificationModel.listActive(familyId);
+      const notifications = await NotificationEventModel.listActive(familyId);
 
       // Send digest to each eligible member
       for (const member of eligibleMembers) {
@@ -81,6 +81,7 @@ export const handler: ScheduledHandler = async (event, context) => {
           metrics.emailSentCount++;
 
           await markDigestDelivered(familyId, member.memberId, memberNotifications, 'WEEKLY');
+          await resolveSuggestionNotifications(familyId, memberNotifications, logger);
         } catch (err) {
           logger.error('Failed to send weekly digest', err as Error, {
             memberId: member.memberId,
@@ -113,12 +114,7 @@ export const handler: ScheduledHandler = async (event, context) => {
 
 async function sendDigestEmail(
   member: Member,
-  notifications: Array<{
-    notificationId: string;
-    type: string;
-    itemName?: string;
-    createdAt: string;
-  }>,
+  notifications: NotificationEvent[],
   digestType: 'daily' | 'weekly'
 ): Promise<void> {
   const fromEmail = process.env['SES_FROM_EMAIL'];
@@ -126,13 +122,7 @@ async function sendDigestEmail(
     throw new Error('SES_FROM_EMAIL not configured');
   }
 
-  const digestNotifications: DigestNotification[] = notifications.map((n) => ({
-    notificationId: n.notificationId,
-    type: normalizeNotificationType(n.type),
-    message: n.itemName || `${n.type} notification`,
-    createdAt: n.createdAt,
-    itemName: n.itemName,
-  }));
+  const digestNotifications: DigestNotification[] = notifications.map(buildDigestNotification);
 
   const unsubscribeUrl = buildUnsubscribeUrl(member.familyId, member.memberId);
   const preferencesUrl = 'https://www.inventoryhq.io/settings?tab=notifications';
@@ -167,19 +157,27 @@ async function sendDigestEmail(
 }
 
 function normalizeNotificationType(rawType: string): string {
-  return rawType
+  const normalized = rawType
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, '_')
     .toUpperCase();
+  if (normalized === 'SUGGESTION_RESPONSE') {
+    return 'SUGGESTION';
+  }
+  return normalized;
 }
 
 function filterNotificationsForMember(
   member: Member,
-  notifications: Array<{ notificationId: string; type: string; itemName?: string; createdAt: string }>,
+  notifications: NotificationEvent[],
   frequency: 'DAILY' | 'WEEKLY'
 ) {
   const prefs = member.notificationPreferences || {};
   return notifications.filter((notification) => {
+    if ('recipientId' in notification && notification.recipientId && notification.recipientId !== member.memberId) {
+      return false;
+    }
+
     const typeKey = normalizeNotificationType(notification.type);
     const prefKey = `${typeKey}:EMAIL`;
     const rawPref = prefs[prefKey];
@@ -237,6 +235,59 @@ function buildUnsubscribeUrl(familyId: string, memberId: string) {
   );
 
   return getFrontendUrl(`/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`);
+}
+
+async function resolveSuggestionNotifications(
+  familyId: string,
+  notifications: NotificationEvent[],
+  logger: Logger
+) {
+  for (const notification of notifications) {
+    if (isSuggestionResponseNotification(notification)) {
+      try {
+        await NotificationEventModel.resolve(familyId, notification.notificationId);
+      } catch (error) {
+        logger.error('Failed to resolve suggestion notification after digest send', error as Error, {
+          familyId,
+          notificationId: notification.notificationId,
+        });
+      }
+    }
+  }
+}
+
+function buildDigestNotification(notification: NotificationEvent): DigestNotification {
+  if (isSuggestionResponseNotification(notification)) {
+    return {
+      notificationId: notification.notificationId,
+      type: normalizeNotificationType(notification.type),
+      message: buildSuggestionDigestMessage(notification),
+      createdAt: notification.createdAt,
+    };
+  }
+
+  return {
+    notificationId: notification.notificationId,
+    type: normalizeNotificationType(notification.type),
+    message: notification.itemName || `${notification.type} notification`,
+    createdAt: notification.createdAt,
+    itemName: notification.itemName,
+  };
+}
+
+function buildSuggestionDigestMessage(notification: SuggestionResponseNotification): string {
+  const decision =
+    notification.suggestionDecision === 'approved' ? 'approved' : 'rejected';
+  const action =
+    notification.suggestionType === 'add_to_shopping' ? 'add' : 'create';
+  const itemLabel = notification.itemName ? `"${notification.itemName}"` : 'an item';
+  return `Your suggestion to ${action} ${itemLabel} was ${decision}.`;
+}
+
+function isSuggestionResponseNotification(
+  notification: NotificationEvent
+): notification is SuggestionResponseNotification {
+  return notification.type === 'suggestion_response';
 }
 
 export default handler;

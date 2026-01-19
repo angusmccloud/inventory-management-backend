@@ -71,7 +71,8 @@ export default [
       '*.js',
       '*.d.ts',
       '*.js.map',
-      '*.log'
+      '*.log',
+      '*.min.js'
     ]
   }
 ];

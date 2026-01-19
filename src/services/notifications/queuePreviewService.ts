@@ -7,7 +7,7 @@
 
 import { MemberModel } from '../../models/member';
 import { FamilyModel } from '../../models/family';
-import { NotificationModel } from '../../models/notification';
+import { NotificationEventModel, NotificationEvent } from '../../models/notificationEvent';
 import { Member, Frequency } from '../../types/entities';
 import { DEFAULT_FREQUENCY, normalizePreferenceValue } from './defaults';
 
@@ -55,14 +55,18 @@ export async function previewDeliveryQueue(): Promise<QueuePreviewResult> {
     const members = await MemberModel.listByFamily(familyId);
     const eligibleMembers = members.filter((m) => !m.unsubscribeAllEmail);
 
-    const notifications = await NotificationModel.listActive(familyId);
+    const notifications = await NotificationEventModel.listActive(familyId);
 
     if (notifications.length === 0) continue;
 
     // For each member, determine what would be sent
     for (const member of eligibleMembers) {
       for (const notification of notifications) {
-        const deliveryMethods = getDeliveryMethods(member, notification.type);
+        if ('recipientId' in notification && notification.recipientId && notification.recipientId !== member.memberId) {
+          continue;
+        }
+
+        const deliveryMethods = getDeliveryMethods(member, notification);
         if (deliveryMethods.length === 0) continue;
 
         // Check if already sent (simplified - in production check delivery ledger)
@@ -77,11 +81,11 @@ export async function previewDeliveryQueue(): Promise<QueuePreviewResult> {
             memberName: member.name,
             familyId,
             notificationId: notification.notificationId,
-            notificationType: notification.type,
-            itemName: notification.itemName,
+            notificationType: normalizeNotificationType(notification.type),
+            itemName: 'itemName' in notification ? notification.itemName : undefined,
             createdAt: notification.createdAt,
             deliveryMethod,
-            reason: `${notification.type} notification pending ${deliveryMethod.toLowerCase()} delivery`,
+            reason: `${normalizeNotificationType(notification.type)} notification pending ${deliveryMethod.toLowerCase()} delivery`,
           };
 
           if (deliveryMethod === 'IMMEDIATE') {
@@ -115,15 +119,27 @@ export async function previewDeliveryQueue(): Promise<QueuePreviewResult> {
  */
 function getDeliveryMethods(
   member: Member,
-  notificationType: string
+  notification: NotificationEvent
 ): Array<Exclude<Frequency, 'NONE'>> {
   const prefs = member.notificationPreferences || {};
-  const key = `${notificationType}:EMAIL`;
+  const typeKey = normalizeNotificationType(notification.type);
+  const key = `${typeKey}:EMAIL`;
   const rawPref = prefs[key];
   const prefList = normalizePreferenceValue(rawPref);
   const effective = rawPref === undefined || rawPref === null ? [DEFAULT_FREQUENCY] : prefList;
 
   return effective.filter((freq): freq is Exclude<Frequency, 'NONE'> => freq !== 'NONE');
+}
+
+function normalizeNotificationType(rawType: string): string {
+  const normalized = rawType
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .toUpperCase();
+  if (normalized === 'SUGGESTION_RESPONSE') {
+    return 'SUGGESTION';
+  }
+  return normalized;
 }
 
 export default {

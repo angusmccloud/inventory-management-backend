@@ -1182,6 +1182,60 @@ Resources:
             Auth:
               Authorizer: NONE
 
+  # GET /pending-invitations - Fetch pending invitations for authenticated user
+  PendingInvitationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-pending-invitations-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/pendingInvite.handler
+      Description: Fetch pending invitations for authenticated user
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        PendingInvitationsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /pending-invitations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /pending-invitations/{inviteId}/accept|decline and /pending-invitations/decline-all
+  RespondToInviteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-respond-pending-invite-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/respondToInvite.handler
+      Description: Respond to pending invitations (accept/decline/decline-all)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        AcceptPendingInviteApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /pending-invitations/{inviteId}/accept
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeclinePendingInviteApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /pending-invitations/{inviteId}/decline
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeclineAllPendingInvitesApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /pending-invitations/decline-all
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
   # GET /families/{familyId}/members - List members
   ListMembersFunction:
     Type: AWS::Serverless::Function

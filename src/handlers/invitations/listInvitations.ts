@@ -43,6 +43,7 @@ export async function handler(event: APIGatewayProxyEvent, context: Context): Pr
       | 'accepted'
       | 'expired'
       | 'revoked'
+      | 'declined'
       | 'all';
 
     // List invitations
@@ -77,4 +78,3 @@ export async function handler(event: APIGatewayProxyEvent, context: Context): Pr
     return errorResponse(500, 'InternalServerError', 'Failed to list invitations');
   }
 }
-

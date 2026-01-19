@@ -42,6 +42,8 @@ const FUNCTION_NAMES = [
   'get-invitation',
   'revoke-invitation',
   'accept-invitation',
+  'pending-invitations',
+  'respond-pending-invite',
   'list-members',
   'get-member',
   'update-member',
