@@ -28,7 +28,11 @@ export type EntityType =
   | 'Store' 
   | 'ShoppingListItem' 
   | 'Notification' 
-  | 'Suggestion';
+  | 'Suggestion'
+  | 'CredentialVerificationTicket'
+  | 'AuditLogEntry'
+  | 'NotificationReceipt'
+  | 'RateLimit';
 
 /**
  * Member role within a family
@@ -73,6 +77,8 @@ export interface Family extends BaseEntity {
   name: string;
   createdBy: string; // memberId
   entityType: 'Family';
+  GSI1PK?: string;
+  GSI1SK?: string;
 }
 
 /**
@@ -85,11 +91,14 @@ export interface Member extends BaseEntity {
   name: string;
   role: MemberRole;
   status: MemberStatus;
+  isActive?: boolean; // Soft-delete flag for account removal workflows
+  deletionRequestedAt?: string | null; // ISO timestamp when deletion confirmation is pending
+  passwordUpdatedAt?: string; // ISO timestamp of last password change
   version: number; // Optimistic locking version (starts at 1)
   themePreference?: 'light' | 'dark' | 'auto'; // User's theme preference (optional, defaults to 'auto')
   // Notification preference matrix stored on the Member record.
   // Keys are of the form "{notificationType}:{channel}" and values are frequency enums.
-  notificationPreferences?: Record<string, Frequency>;
+  notificationPreferences?: Record<string, NotificationPreferenceValue>;
   // Quick opt-out for all email channels
   unsubscribeAllEmail?: boolean;
   // Member timezone (IANA) used to schedule digests
@@ -100,9 +109,79 @@ export interface Member extends BaseEntity {
 }
 
 /**
+ * Credential verification ticket action type
+ */
+export type CredentialActionType = 'email_change' | 'password_change' | 'delete_account';
+
+/**
+ * Credential verification ticket status
+ */
+export type CredentialTicketStatus = 'pending' | 'confirmed' | 'cancelled' | 'expired';
+
+/**
+ * Credential Verification Ticket Entity
+ */
+export interface CredentialVerificationTicket extends BaseEntity {
+  ticketId: string;
+  familyId: string;
+  memberId: string;
+  actionType: CredentialActionType;
+  status: CredentialTicketStatus;
+  issuedAt: string;
+  expiresAt: string;
+  ttl: number;
+  newEmail?: string;
+  entityType: 'CredentialVerificationTicket';
+}
+
+
+/**
+ * Audit Log Entry Entity
+ */
+export interface AuditLogEntry extends BaseEntity {
+  auditId: string;
+  familyId: string;
+  memberId: string;
+  action: string;
+  details?: Record<string, unknown>;
+  correlationId: string;
+  entityType: 'AuditLogEntry';
+}
+
+
+/**
+ * Notification Receipt Entity
+ */
+export interface NotificationReceipt extends BaseEntity {
+  notificationId: string;
+  familyId: string;
+  memberId: string;
+  type: 'EMAIL_CHANGE_NOTICE' | 'DELETION_RECEIPT';
+  status: 'queued' | 'sent' | 'failed';
+  payload?: Record<string, unknown>;
+  sentAt?: string;
+  entityType: 'NotificationReceipt';
+}
+
+/**
+ * Rate Limit Record Entity
+ */
+export interface RateLimitRecord extends BaseEntity {
+  memberId: string;
+  action: string;
+  windowStart: number;
+  count: number;
+  ttl: number;
+  entityType: 'RateLimit';
+}
+
+
+/**
  * Frequency enum used by notification preferences
  */
 export type Frequency = 'NONE' | 'IMMEDIATE' | 'DAILY' | 'WEEKLY';
+
+export type NotificationPreferenceValue = Frequency | Frequency[];
 
 /**
  * InventoryItem Entity - Tracked consumable good
@@ -233,6 +312,8 @@ export const KeyBuilder = {
   family: (familyId: string) => ({
     PK: `FAMILY#${familyId}`,
     SK: `FAMILY#${familyId}`,
+    GSI1PK: 'FAMILY',
+    GSI1SK: `FAMILY#${familyId}`,
   }),
   
   member: (familyId: string, memberId: string) => ({
@@ -242,6 +323,26 @@ export const KeyBuilder = {
     GSI1SK: `FAMILY#${familyId}`,
   }),
   
+  credentialVerificationTicket: (familyId: string, ticketId: string) => ({
+    PK: `FAMILY#${familyId}`,
+    SK: `CREDENTIAL_TICKET#${ticketId}`,
+  }),
+
+  auditLogEntry: (familyId: string, auditId: string, createdAt: string) => ({
+    PK: `FAMILY#${familyId}`,
+    SK: `AUDIT#${createdAt}#${auditId}`,
+  }),
+
+  notificationReceipt: (familyId: string, notificationId: string) => ({
+    PK: `FAMILY#${familyId}`,
+    SK: `NOTIFICATION#${notificationId}`,
+  }),
+
+  rateLimit: (memberId: string, action: string, windowStart: number) => ({
+    PK: `RATE#${memberId}`,
+    SK: `ACTION#${action}#WINDOW#${windowStart}`,
+  }),
+
   inventoryItem: (familyId: string, itemId: string, status: ItemStatus, quantity: number) => ({
     PK: `FAMILY#${familyId}`,
     SK: `ITEM#${itemId}`,
@@ -295,7 +396,7 @@ export interface MemberInput {
   name: string;
   role: MemberRole;
   // Optional initial notification settings when creating a member
-  notificationPreferences?: Record<string, Frequency>;
+  notificationPreferences?: Record<string, NotificationPreferenceValue>;
   unsubscribeAllEmail?: boolean;
   timezone?: string;
 }

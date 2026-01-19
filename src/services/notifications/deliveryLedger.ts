@@ -6,12 +6,22 @@ import { UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 
 const TABLE_NAME = getTableName();
 
-export function ledgerKey(channel: string, frequency: string) {
+export function ledgerKey(channel: string, frequency: string, memberId?: string) {
+  if (memberId) {
+    return `${memberId}:${channel}:${frequency}`;
+  }
   return `${channel}:${frequency}`;
 }
 
-export async function markDelivered(familyId: string, notificationId: string, channel: string, frequency: string, sentAt?: string) {
-  const key = ledgerKey(channel, frequency);
+export async function markDelivered(
+  familyId: string,
+  notificationId: string,
+  channel: string,
+  frequency: string,
+  sentAt?: string,
+  memberId?: string
+) {
+  const key = ledgerKey(channel, frequency, memberId);
   const now = sentAt || new Date().toISOString();
 
   const params: any = {
@@ -28,8 +38,15 @@ export async function markDelivered(familyId: string, notificationId: string, ch
   return (res as any).Attributes;
 }
 
-export async function hasBeenSentRecently(familyId: string, notificationId: string, channel: string, frequency: string, windowMs: number) {
-  const key = ledgerKey(channel, frequency);
+export async function hasBeenSentRecently(
+  familyId: string,
+  notificationId: string,
+  channel: string,
+  frequency: string,
+  windowMs: number,
+  memberId?: string
+) {
+  const key = ledgerKey(channel, frequency, memberId);
   // Read the notification item and inspect deliveryLedger for the given channel/frequency
   try {
     const res = await docClient.send(
@@ -56,4 +73,32 @@ export async function hasBeenSentRecently(familyId: string, notificationId: stri
   }
 }
 
-export default { ledgerKey, markDelivered, hasBeenSentRecently };
+export async function hasBeenDelivered(
+  familyId: string,
+  notificationId: string,
+  channel: string,
+  frequency: string,
+  memberId?: string
+) {
+  const memberKey = ledgerKey(channel, frequency, memberId);
+  const legacyKey = ledgerKey(channel, frequency);
+  try {
+    const res = await docClient.send(
+      new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { PK: `FAMILY#${familyId}`, SK: `NOTIFICATION#${notificationId}` },
+      } as any)
+    );
+
+    const item: any = (res as any).Item;
+    if (!item?.deliveryLedger) return false;
+    return (
+      !!item.deliveryLedger[memberKey]?.lastSentAt ||
+      !!item.deliveryLedger[legacyKey]?.lastSentAt
+    );
+  } catch (err) {
+    return false;
+  }
+}
+
+export default { ledgerKey, markDelivered, hasBeenSentRecently, hasBeenDelivered };

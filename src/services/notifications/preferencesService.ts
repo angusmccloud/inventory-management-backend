@@ -1,8 +1,13 @@
 import { MemberModel } from '../../models/member';
-import { seedDefaultPreferences, DEFAULT_FREQUENCY, applyUnsubscribeAllEmail } from './defaults';
-import { Frequency } from '../../types/entities';
+import {
+  seedDefaultPreferences,
+  DEFAULT_FREQUENCY,
+  applyUnsubscribeAllEmail,
+  normalizePreferenceValue,
+} from './defaults';
+import { Frequency, NotificationPreferenceValue } from '../../types/entities';
 
-type PreferenceEntry = { channel: string; frequency: Frequency };
+type PreferenceEntry = { channel: string; frequency: Frequency | Frequency[] };
 type NotificationPreference = { notificationType: string; entries: PreferenceEntry[] };
 
 const SUPPORTED_NOTIFICATION_TYPES = ['LOW_STOCK', 'SUGGESTION'];
@@ -12,24 +17,32 @@ export async function getPreferences(familyId: string, memberId: string) {
   const member = await MemberModel.getById(familyId, memberId);
   if (!member) throw new Error('Member not found');
 
-  const rawPrefs: Record<string, Frequency> =
+  const rawPrefs: Record<string, NotificationPreferenceValue> =
     member.notificationPreferences ?? seedDefaultPreferences(SUPPORTED_NOTIFICATION_TYPES, SUPPORTED_CHANNELS);
 
-  const prefsMap: Record<string, Record<string, Frequency>> = {};
+  const prefsMap: Record<string, Record<string, Frequency[]>> = {};
 
   for (const k of Object.keys(rawPrefs)) {
     const parts = k.split(':');
     const type = parts[0] ?? 'UNKNOWN';
     const channel = parts[1] ?? 'UNKNOWN';
     if (!prefsMap[type]) prefsMap[type] = {};
-    prefsMap[type][channel] = rawPrefs[k] as Frequency;
+    const rawValue = rawPrefs[k];
+    const normalized = normalizePreferenceValue(rawValue);
+    if (member.unsubscribeAllEmail && channel === 'EMAIL') {
+      prefsMap[type][channel] = [];
+    } else if (rawValue === undefined || rawValue === null) {
+      prefsMap[type][channel] = [DEFAULT_FREQUENCY];
+    } else {
+      prefsMap[type][channel] = normalized;
+    }
   }
 
   const preferences: NotificationPreference[] = Object.keys(prefsMap).map((type) => ({
     notificationType: type,
-    entries: Object.keys(prefsMap[type]!).map((channel) => {
-      const freq = prefsMap[type]![channel];
-      return { channel, frequency: freq ?? DEFAULT_FREQUENCY };
+    entries: Object.keys(prefsMap[type] || {}).map((channel) => {
+      const freq = prefsMap[type]?.[channel] ?? [DEFAULT_FREQUENCY];
+      return { channel, frequency: freq };
     }),
   }));
 
@@ -51,16 +64,19 @@ export async function updatePreferences(
   unsubscribeAllEmail: boolean | undefined,
   expectedVersion?: number
 ) {
-  const prefsMap: Record<string, Frequency> = {};
+  const prefsMap: Record<string, Frequency[]> = {};
   for (const p of preferences) {
     for (const e of p.entries) {
-      prefsMap[`${p.notificationType}:${e.channel}`] = e.frequency;
+      const rawValue = e.frequency;
+      const normalized = normalizePreferenceValue(rawValue);
+      prefsMap[`${p.notificationType}:${e.channel}`] =
+        rawValue === undefined || rawValue === null ? [DEFAULT_FREQUENCY] : normalized;
     }
   }
 
   let finalPrefs = prefsMap;
   if (unsubscribeAllEmail) {
-    finalPrefs = (applyUnsubscribeAllEmail(finalPrefs) as Record<string, Frequency>);
+    finalPrefs = applyUnsubscribeAllEmail(finalPrefs) as Record<string, Frequency[]>;
   }
 
   if (expectedVersion !== undefined) {

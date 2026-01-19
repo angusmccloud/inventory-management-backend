@@ -13,6 +13,9 @@ import {
   Store,
   StoreInput,
 } from '../types/entities';
+import { sendNotification } from './notifications/send';
+import { DEFAULT_FREQUENCY, normalizePreferenceValue } from './notifications/defaults';
+import { createUnsubscribeToken } from '../lib/unsubscribeToken';
 
 /**
  * InventoryService
@@ -32,6 +35,7 @@ export class InventoryService {
         itemName: item.name,
         currentQuantity: item.quantity,
         threshold: item.lowStockThreshold,
+        unit: item.unit,
       });
 
       if (!result.isNew) {
@@ -51,31 +55,53 @@ export class InventoryService {
       // Get admin members to send email notifications
       const members = await MemberModel.listByFamily(item.familyId);
       const adminMembers = members.filter(
-        (m) => m.role === 'admin' && m.status === 'active' && m.email
+        (m) => m.role === 'admin' && m.status === 'active' && m.email && !m.unsubscribeAllEmail
       );
 
-      // Build recipients list
-      const recipients = adminMembers.map((admin) => ({
-        email: admin.email,
-        name: admin.name,
-      }));
+      const notificationTypeKey = 'LOW_STOCK';
+      const subject = `Low Stock Item: ${item.name}`;
+      const quantityText = formatQuantityWithUnit(item.quantity, item.unit);
+      const shoppingListUrl = 'https://www.inventoryhq.io/shopping-list';
+      const inventoryUrl = 'https://www.inventoryhq.io/inventory';
+      const preferencesUrl = 'https://www.inventoryhq.io/settings?tab=notifications';
 
-      // Send email to all admins
-      if (recipients.length > 0) {
+      for (const admin of adminMembers) {
+        const preferenceKey = `${notificationTypeKey}:EMAIL`;
+        const rawPreference = admin.notificationPreferences?.[preferenceKey];
+        const frequencies = normalizePreferenceValue(rawPreference);
+        const effective =
+          rawPreference === undefined || rawPreference === null ? [DEFAULT_FREQUENCY] : frequencies;
+        if (!effective.includes('IMMEDIATE')) {
+          continue;
+        }
+
+        const unsubscribeUrl = buildUnsubscribeUrl(item.familyId, admin.memberId);
+
         try {
-          // TODO: Implement email service for low stock alerts
-          // await emailService.sendLowStockAlert(recipients, {
-          //   itemName: item.name,
-          //   currentQuantity: item.quantity,
-          //   threshold: item.lowStockThreshold,
-          //   familyName,
-          // });
-          logger.info('Low stock email would be sent', { recipientCount: recipients.length });
+          await sendNotification(
+            item.familyId,
+            result.notification.notificationId,
+            'EMAIL',
+            'IMMEDIATE',
+            {
+              to: admin.email,
+              title: subject,
+              message: [
+                `You're running low on ${item.name}. You're down to ${quantityText}`,
+                `Add it to your Shopping List ${shoppingListUrl} or inventory ${inventoryUrl} to dismiss notification`,
+                `Manage your email preferences or unsubscribe: ${preferencesUrl}`,
+              ].join('\n'),
+              unsubscribeUrl,
+              preferencesUrl,
+            },
+            undefined,
+            admin.memberId
+          );
         } catch (emailError) {
-          // Log but don't fail the operation if email fails
-          logger.error('Failed to send low stock emails', emailError as Error, {
-            recipientCount: recipients.length,
+          logger.error('Failed to send low stock email', emailError as Error, {
+            memberId: admin.memberId,
             itemId: item.itemId,
+            familyId: item.familyId,
           });
         }
       }
@@ -455,4 +481,27 @@ export class InventoryService {
       throw error;
     }
   }
+}
+
+function formatQuantityWithUnit(quantity: number, unit?: string) {
+  if (!unit) return `${quantity}`;
+  const suffix = quantity === 1 ? '' : 's';
+  return `${quantity} ${unit}${suffix}`;
+}
+
+function buildUnsubscribeUrl(familyId: string, memberId: string) {
+  const secret = process.env['UNSUBSCRIBE_SECRET'] || '';
+  if (!secret) return undefined;
+
+  const token = createUnsubscribeToken(
+    {
+      memberId,
+      familyId,
+      action: 'unsubscribe_all',
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString(),
+    },
+    secret
+  );
+
+  return `https://www.inventoryhq.io/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`;
 }

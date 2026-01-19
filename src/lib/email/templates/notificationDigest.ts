@@ -23,6 +23,8 @@ export interface DigestTemplateArgs {
   unsubscribeUrl?: string;
   preferencesUrl?: string;
   dashboardUrl?: string;
+  shoppingListUrl?: string;
+  inventoryUrl?: string;
 }
 
 function formatNotificationType(type: string): string {
@@ -66,8 +68,16 @@ export function buildDigestEmail(args: DigestTemplateArgs): {
   text: string;
   html: string;
 } {
-  const { recipientName, digestType, notifications, unsubscribeUrl, preferencesUrl, dashboardUrl } =
-    args;
+  const {
+    recipientName,
+    digestType,
+    notifications,
+    unsubscribeUrl,
+    preferencesUrl,
+    dashboardUrl,
+    shoppingListUrl,
+    inventoryUrl,
+  } = args;
 
   const periodLabel = digestType === 'daily' ? 'Daily' : 'Weekly';
   const subject =
@@ -106,6 +116,18 @@ export function buildDigestEmail(args: DigestTemplateArgs): {
 
   if (dashboardUrl) {
     textLines.push(`View all notifications: ${dashboardUrl}`);
+    textLines.push('');
+  }
+
+  if (shoppingListUrl && inventoryUrl) {
+    textLines.push(
+      `Add items to your Shopping List (${shoppingListUrl}) or Inventory (${inventoryUrl}) to dismiss notifications.`
+    );
+    textLines.push('');
+  }
+
+  if (preferencesUrl) {
+    textLines.push(`Manage your email preferences or unsubscribe: ${preferencesUrl}`);
     textLines.push('');
   }
 
@@ -160,6 +182,21 @@ export function buildDigestEmail(args: DigestTemplateArgs): {
     ? `<p style="margin-top: 1rem;"><a href="${dashboardUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 0.75rem 1.5rem; border-radius: 0.375rem; text-decoration: none; font-weight: 500;">View All Notifications</a></p>`
     : '';
 
+  const actionLinks =
+    shoppingListUrl && inventoryUrl
+      ? `<p style="margin-top: 1rem; color: #4b5563;">
+          Add items to your <a href="${shoppingListUrl}" style="color: #2563eb;">Shopping List</a> or
+          <a href="${inventoryUrl}" style="color: #2563eb;">Inventory</a> to dismiss notifications.
+        </p>`
+      : '';
+
+  const preferenceLine = preferencesUrl
+    ? `<p style="margin-top: 0.75rem; color: #4b5563;">
+        Manage your email preferences or unsubscribe:
+        <a href="${preferencesUrl}" style="color: #2563eb;">${preferencesUrl}</a>
+      </p>`
+    : '';
+
   const htmlFooterParts: string[] = [];
   if (unsubscribeUrl)
     htmlFooterParts.push(`<a href="${unsubscribeUrl}" style="color: #6b7280;">Unsubscribe</a>`);
@@ -193,6 +230,8 @@ export function buildDigestEmail(args: DigestTemplateArgs): {
   ${htmlNotifications}
   ${oldestWarning}
   ${dashboardLink}
+  ${actionLinks}
+  ${preferenceLine}
 
   <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0 1rem;">
 

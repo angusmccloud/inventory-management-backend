@@ -6,19 +6,21 @@
  */
 
 import { ScheduledHandler } from 'aws-lambda';
-import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
-import { docClient, getTableName } from '../../lib/dynamodb';
 import { createLambdaLogger, logLambdaInvocation, logLambdaCompletion } from '../../lib/logger';
 import { handleWarmup, warmupResponse } from '../../lib/warmup';
 import { generateUUID } from '../../lib/uuid';
 import { MemberModel } from '../../models/member';
+import { FamilyModel } from '../../models/family';
+import { NotificationModel } from '../../models/notification';
 import { buildDigestEmail, DigestNotification } from '../../lib/email/templates/notificationDigest';
 import { publishJobMetrics, logJobEvent, JobMetrics } from '../../lib/monitoring/notificationMetrics';
 import { getFrontendUrl } from '../../config/domain';
 import { Member } from '../../types/entities';
+import { DEFAULT_FREQUENCY, normalizePreferenceValue } from '../../services/notifications/defaults';
+import { createUnsubscribeToken } from '../../lib/unsubscribeToken';
+import { markDelivered } from '../../services/notifications/deliveryLedger';
 
-const TABLE_NAME = getTableName();
 const ses = new SESClient({ region: process.env['AWS_REGION'] || 'us-east-1' });
 
 export const handler: ScheduledHandler = async (event, context) => {
@@ -47,68 +49,38 @@ export const handler: ScheduledHandler = async (event, context) => {
   logJobEvent(context.awsRequestId, 'start', 'DAILY', { runId });
 
   try {
-    // Get all families (simplified: in production, use pagination)
-    const familiesResult = await docClient.send(
-      new QueryCommand({
-        TableName: TABLE_NAME,
-        IndexName: 'GSI1',
-        KeyConditionExpression: 'begins_with(GSI1PK, :pk)',
-        ExpressionAttributeValues: { ':pk': 'FAMILY#' },
-        Limit: 100,
-      })
-    );
-
-    const families = familiesResult.Items || [];
+    const families = await FamilyModel.listAll();
 
     for (const family of families) {
-      const familyId = family['familyId'] as string;
+      const familyId = family.familyId;
       if (!familyId) continue;
 
       // Get members with DAILY email preference
       const members = await MemberModel.listByFamily(familyId);
-      const eligibleMembers = members.filter((m) => {
-        if (m.unsubscribeAllEmail) return false;
-        const prefs = m.notificationPreferences || {};
-        // Check if any notification type has DAILY email preference
-        return Object.entries(prefs).some(
-          ([key, freq]) => key.endsWith(':EMAIL') && freq === 'DAILY'
-        );
-      });
+      const eligibleMembers = members.filter((m) => isMemberEligibleForDigest(m, 'DAILY'));
 
       metrics.targetUserCount += eligibleMembers.length;
 
-      // Get active notifications for this family
-      const notificationsResult = await docClient.send(
-        new QueryCommand({
-          TableName: TABLE_NAME,
-          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
-          FilterExpression: '#status = :status',
-          ExpressionAttributeNames: { '#status': 'status' },
-          ExpressionAttributeValues: {
-            ':pk': `FAMILY#${familyId}`,
-            ':sk': 'NOTIFICATION#',
-            ':status': 'active',
-          },
-        })
-      );
-
-      const notifications = (notificationsResult.Items || []) as Array<{
-        notificationId: string;
-        type: string;
-        itemName?: string;
-        createdAt: string;
-      }>;
-
-      if (notifications.length === 0) {
-        metrics.skippedCount += eligibleMembers.length;
-        continue;
-      }
+      const notifications = await NotificationModel.listActive(familyId);
 
       // Send digest to each eligible member
       for (const member of eligibleMembers) {
         try {
-          await sendDigestEmail(member, notifications, 'daily');
+          const memberNotifications = filterNotificationsForMember(
+            member,
+            notifications,
+            'DAILY'
+          );
+
+          if (memberNotifications.length === 0) {
+            metrics.skippedCount++;
+            continue;
+          }
+
+          await sendDigestEmail(member, memberNotifications, 'daily');
           metrics.emailSentCount++;
+
+          await markDigestDelivered(familyId, member.memberId, memberNotifications, 'DAILY');
         } catch (err) {
           logger.error('Failed to send daily digest', err as Error, {
             memberId: member.memberId,
@@ -156,15 +128,17 @@ async function sendDigestEmail(
 
   const digestNotifications: DigestNotification[] = notifications.map((n) => ({
     notificationId: n.notificationId,
-    type: n.type,
+    type: normalizeNotificationType(n.type),
     message: n.itemName || `${n.type} notification`,
     createdAt: n.createdAt,
     itemName: n.itemName,
   }));
 
-  const unsubscribeUrl = getFrontendUrl(`/api/notifications/unsubscribe?memberId=${member.memberId}`);
-  const preferencesUrl = getFrontendUrl(`/settings/notifications?familyId=${member.familyId}&memberId=${member.memberId}`);
+  const unsubscribeUrl = buildUnsubscribeUrl(member.familyId, member.memberId);
+  const preferencesUrl = 'https://www.inventoryhq.io/settings?tab=notifications';
   const dashboardUrl = getFrontendUrl(`/notifications?familyId=${member.familyId}`);
+  const shoppingListUrl = 'https://www.inventoryhq.io/shopping-list';
+  const inventoryUrl = 'https://www.inventoryhq.io/inventory';
 
   const { subject, text, html } = buildDigestEmail({
     recipientName: member.name,
@@ -173,11 +147,13 @@ async function sendDigestEmail(
     unsubscribeUrl,
     preferencesUrl,
     dashboardUrl,
+    shoppingListUrl,
+    inventoryUrl,
   });
 
   await ses.send(
     new SendEmailCommand({
-      Source: fromEmail,
+      Source: `Inventory HQ <${fromEmail}>`,
       Destination: { ToAddresses: [member.email] },
       Message: {
         Subject: { Data: subject },
@@ -188,6 +164,79 @@ async function sendDigestEmail(
       },
     })
   );
+}
+
+function normalizeNotificationType(rawType: string): string {
+  return rawType
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .toUpperCase();
+}
+
+function filterNotificationsForMember(
+  member: Member,
+  notifications: Array<{ notificationId: string; type: string; itemName?: string; createdAt: string }>,
+  frequency: 'DAILY' | 'WEEKLY'
+) {
+  const prefs = member.notificationPreferences || {};
+  return notifications.filter((notification) => {
+    const typeKey = normalizeNotificationType(notification.type);
+    const prefKey = `${typeKey}:EMAIL`;
+    const rawPref = prefs[prefKey];
+    const prefList = normalizePreferenceValue(rawPref);
+    const effective =
+      rawPref === undefined || rawPref === null ? [DEFAULT_FREQUENCY] : prefList;
+    return effective.includes(frequency);
+  });
+}
+
+function isMemberEligibleForDigest(member: Member, frequency: 'DAILY' | 'WEEKLY') {
+  if (member.unsubscribeAllEmail) return false;
+
+  const prefs = member.notificationPreferences || {};
+  const keys = Object.keys(prefs);
+  if (keys.length === 0) {
+    return DEFAULT_FREQUENCY === frequency;
+  }
+
+  return Object.entries(prefs).some(
+    ([key, pref]) => {
+      if (!key.endsWith(':EMAIL')) return false;
+      const prefList = normalizePreferenceValue(pref);
+      const effective =
+        pref === undefined || pref === null ? [DEFAULT_FREQUENCY] : prefList;
+      return effective.includes(frequency);
+    }
+  );
+}
+
+async function markDigestDelivered(
+  familyId: string,
+  memberId: string,
+  notifications: Array<{ notificationId: string }>,
+  frequency: 'DAILY' | 'WEEKLY'
+) {
+  const now = new Date().toISOString();
+  for (const notification of notifications) {
+    await markDelivered(familyId, notification.notificationId, 'EMAIL', frequency, now, memberId);
+  }
+}
+
+function buildUnsubscribeUrl(familyId: string, memberId: string) {
+  const secret = process.env['UNSUBSCRIBE_SECRET'] || '';
+  if (!secret) return undefined;
+
+  const token = createUnsubscribeToken(
+    {
+      memberId,
+      familyId,
+      action: 'unsubscribe_all',
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString(),
+    },
+    secret
+  );
+
+  return getFrontendUrl(`/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`);
 }
 
 export default handler;

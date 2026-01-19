@@ -22,6 +22,7 @@ Globals:
         NODE_ENV: !Ref Environment
         LOG_LEVEL: INFO
         SES_FROM_EMAIL: !Ref SESFromEmail
+        UNSUBSCRIBE_SECRET: !Ref UnsubscribeSecret
         WARMUP_ENABLED: "true"
     Tracing: Active
 
@@ -39,6 +40,11 @@ Parameters:
     Type: String
     Default: ""
     Description: Verified email address for sending notifications via SES
+
+  UnsubscribeSecret:
+    Type: String
+    Default: ""
+    Description: HMAC secret used to sign unsubscribe tokens
   
   FrontendUrl:
     Type: String
@@ -299,6 +305,14 @@ Resources:
                 Condition:
                   StringEquals:
                     'ses:FromAddress': !If [HasSESEmail, !Ref SESFromEmail, '*']
+        - PolicyName: CloudWatchMetricsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
         - PolicyName: SecretsManagerAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -421,12 +435,13 @@ Resources:
       Description: Processes immediate notifications and marks delivery ledger to avoid duplicates
       Role: !GetAtt LambdaExecutionRole.Arn
       # Schedule every 15 minutes
+      # Temporarily every 1min for debugging
       Events:
         ImmediateDispatcherSchedule:
           Type: Schedule
           Properties:
             Schedule: 'rate(15 minutes)'
-            Enabled: true
+            Enabled: false
 
   # Explicit EventBridge rule + permission for Immediate Dispatcher (redundant with SAM Schedule but ensures explicit control)
   ImmediateDispatcherRule:
@@ -435,7 +450,7 @@ Resources:
       Name: !Sub '${AWS::StackName}-immediate-dispatcher-${Environment}'
       Description: 'Scheduled rule to trigger Immediate Dispatcher every 15 minutes'
       ScheduleExpression: rate(15 minutes)
-      State: ENABLED
+      State: DISABLED
       Targets:
         - Arn: !GetAtt ImmediateDispatcherFunction.Arn
           Id: ImmediateDispatcherTarget
@@ -1118,6 +1133,30 @@ Resources:
             Auth:
               Authorizer: CognitoAuthorizer
 
+  # POST /families/{familyId}/invitations/{invitationId}/resend - Resend invitation
+  ResendInvitationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-resend-invitation-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/invitations/resendInvitation.handler
+      Description: Resend expired invitation with new token and expiration (admin only)
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          FRONTEND_URL: !Ref FrontendUrl
+          INVITATION_HMAC_SECRET_NAME: !Sub '/inventory-mgmt/${Environment}/invitation-hmac-secret'
+          INVITATION_EXPIRATION_SECONDS: '604800'
+      Events:
+        ResendInvitationApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /families/{familyId}/invitations/{invitationId}/resend
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
   # POST /invitations/accept - Accept invitation (public endpoint)
   AcceptInvitationFunction:
     Type: AWS::Serverless::Function
@@ -1131,6 +1170,7 @@ Resources:
       Environment:
         Variables:
           COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
           INVITATION_HMAC_SECRET_NAME: !Sub '/inventory-mgmt/${Environment}/invitation-hmac-secret'
       Events:
         AcceptInvitationApi:
@@ -1211,6 +1251,7 @@ Resources:
       Environment:
         Variables:
           COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         RemoveMemberApi:
           Type: Api
@@ -1220,6 +1261,172 @@ Resources:
             Method: DELETE
             Auth:
               Authorizer: CognitoAuthorizer
+
+  ##########################################################################
+  #  USER SETTINGS
+  ##########################################################################
+
+  # GET /user-settings/me - Profile summary
+  UserSettingsProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-user-settings-me-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/user-settings/getProfile.handler
+      Description: Get user settings profile summary
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        UserSettingsMeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user-settings/me
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # PATCH /user-settings/profile - Update display name
+  UserSettingsUpdateProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-user-settings-profile-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/user-settings/updateProfile.handler
+      Description: Update user display name
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        UserSettingsProfileApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user-settings/profile
+            Method: PATCH
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /user-settings/email-change - Request email change
+  UserSettingsRequestEmailChangeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-user-settings-email-request-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/user-settings/requestEmailChange.handler
+      Description: Request email change with verification ticket
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+          FRONTEND_URL: !Ref FrontendUrl
+      Events:
+        UserSettingsEmailChangeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user-settings/email-change
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /user-settings/email-change/confirm - Confirm email change (public)
+  UserSettingsConfirmEmailChangeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-user-settings-email-confirm-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/user-settings/confirmEmailChange.handler
+      Description: Confirm email change via verification ticket
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        UserSettingsEmailConfirmApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user-settings/email-change/confirm
+            Method: POST
+            Auth:
+              Authorizer: NONE
+
+  # POST /user-settings/password-change - Change password
+  UserSettingsChangePasswordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-user-settings-password-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/user-settings/changePassword.handler
+      Description: Change password with re-authentication
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        UserSettingsPasswordApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user-settings/password-change
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /user-settings/deletion - Request account deletion
+  UserSettingsDeletionRequestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-user-settings-delete-request-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/user-settings/requestAccountDelete.handler
+      Description: Request account deletion with verification ticket
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        UserSettingsDeletionApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user-settings/deletion
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # POST /user-settings/deletion/confirm - Confirm account deletion (public)
+  UserSettingsDeletionConfirmFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-user-settings-delete-confirm-${Environment}'
+      CodeUri: dist/
+      Handler: handlers/user-settings/confirmAccountDelete.handler
+      Description: Confirm account deletion and cascade removal
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        UserSettingsDeletionConfirmApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /user-settings/deletion/confirm
+            Method: POST
+            Auth:
+              Authorizer: NONE
 
   ##########################################################################
   #  REFERENCE DATA MANAGEMENT - Storage Locations

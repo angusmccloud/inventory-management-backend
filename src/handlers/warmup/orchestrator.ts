@@ -70,6 +70,13 @@ const FUNCTION_NAMES = [
   'list-family-nfc-urls',
   'get-theme-preference',
   'update-theme-preference',
+  'user-settings-me',
+  'user-settings-profile',
+  'user-settings-email-request',
+  'user-settings-email-confirm',
+  'user-settings-password',
+  'user-settings-delete-request',
+  'user-settings-delete-confirm',
   // Dashboard functions (Feature 014)
   'dashboard-public-access',
   'dashboard-adjustment',

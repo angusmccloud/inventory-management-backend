@@ -1,6 +1,7 @@
 import {
   PutCommand,
   GetCommand,
+  QueryCommand,
   UpdateCommand,
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
@@ -61,7 +62,7 @@ export class FamilyModel {
       const result = await docClient.send(
         new GetCommand({
           TableName: TABLE_NAME,
-          Key: keys,
+          Key: { PK: keys.PK, SK: keys.SK },
         })
       );
 
@@ -72,6 +73,29 @@ export class FamilyModel {
       return result.Item as Family;
     } catch (error) {
       logger.error('Failed to get family', error as Error, { familyId });
+      throw error;
+    }
+  }
+
+  /**
+   * List all families using the family index (GSI1)
+   */
+  static async listAll(): Promise<Family[]> {
+    try {
+      const result = await docClient.send(
+        new QueryCommand({
+          TableName: TABLE_NAME,
+          IndexName: 'GSI1',
+          KeyConditionExpression: 'GSI1PK = :gsi1pk',
+          ExpressionAttributeValues: {
+            ':gsi1pk': 'FAMILY',
+          },
+        })
+      );
+
+      return (result.Items || []) as Family[];
+    } catch (error) {
+      logger.error('Failed to list families', error as Error);
       throw error;
     }
   }
@@ -106,7 +130,7 @@ export class FamilyModel {
       const result = await docClient.send(
         new UpdateCommand({
           TableName: TABLE_NAME,
-          Key: keys,
+          Key: { PK: keys.PK, SK: keys.SK },
           UpdateExpression: `SET ${updateExpression.join(', ')}`,
           ExpressionAttributeNames: expressionAttributeNames,
           ExpressionAttributeValues: expressionAttributeValues,
@@ -136,7 +160,7 @@ export class FamilyModel {
       await docClient.send(
         new DeleteCommand({
           TableName: TABLE_NAME,
-          Key: keys,
+          Key: { PK: keys.PK, SK: keys.SK },
           ConditionExpression: 'attribute_exists(PK)',
         })
       );

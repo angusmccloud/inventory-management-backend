@@ -188,3 +188,74 @@ export async function acceptInvitation(
   });
 }
 
+/**
+ * Resend an expired invitation with new token and extended expiration
+ */
+export async function resendInvitation(
+  familyId: string,
+  invitationId: string,
+  inviterName: string,
+  familyName: string
+): Promise<Invitation> {
+  // Get invitation
+  const invitation = await InvitationModel.getById(familyId, invitationId);
+  if (!invitation) {
+    throw new Error('INVITATION_NOT_FOUND');
+  }
+
+  // Check if invitation is pending
+  if (invitation.status !== 'pending') {
+    throw new Error('INVITATION_NOT_PENDING');
+  }
+
+  // Check if invitation is expired
+  const isExpired = new Date(invitation.expiresAt) < new Date();
+  if (!isExpired) {
+    throw new Error('INVITATION_NOT_EXPIRED');
+  }
+
+  // Generate new invitation token
+  const { token, signature } = await generateToken();
+
+  // Calculate new expiration (7 days from now)
+  const expirationSeconds = parseInt(
+    process.env['INVITATION_EXPIRATION_SECONDS'] || '604800',
+    10
+  );
+  const newExpiresAt = new Date(Date.now() + expirationSeconds * 1000).toISOString();
+
+  // Update invitation with new token and expiration
+  const updatedInvitation = await InvitationModel.updateExpiration(
+    familyId,
+    invitationId,
+    newExpiresAt,
+    token,
+    signature
+  );
+
+  // Send invitation email
+  try {
+    await sendInvitationEmail({
+      toEmail: updatedInvitation.email,
+      familyName,
+      inviterName,
+      role: updatedInvitation.role,
+      invitationToken: token,
+      expiresAt: newExpiresAt,
+    });
+
+    logger.info('Invitation resent and email sent', {
+      invitationId: updatedInvitation.invitationId,
+      email: updatedInvitation.email,
+      maskedToken: maskToken(token),
+    });
+  } catch (error) {
+    logger.error('Failed to send resent invitation email', error as Error, {
+      invitationId: updatedInvitation.invitationId,
+    });
+    // Don't fail if email fails
+  }
+
+  return updatedInvitation;
+}
+

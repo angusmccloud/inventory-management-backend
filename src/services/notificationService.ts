@@ -11,7 +11,11 @@ import {
   LowStockNotificationInput,
   LowStockNotificationStatus,
 } from '../models/notification';
+import { PutCommand } from '@aws-sdk/lib-dynamodb';
+import { docClient, getTableName } from '../lib/dynamodb';
 import { logger } from '../lib/logger';
+import { generateUUID } from '../lib/uuid';
+import { KeyBuilder, NotificationReceipt } from '../types/entities';
 
 /**
  * Result of creating a low-stock notification
@@ -20,6 +24,8 @@ export interface CreateNotificationResult {
   notification: LowStockNotification;
   isNew: boolean;
 }
+
+const TABLE_NAME = getTableName();
 
 /**
  * NotificationService
@@ -209,5 +215,47 @@ export class NotificationService {
       logger.error('Failed to get notification', error as Error, { familyId, notificationId });
       throw error;
     }
+  }
+
+  /**
+   * Record user settings notification receipts (email change notice, deletion receipt)
+   */
+  static async createUserSettingsReceipt(params: {
+    familyId: string;
+    memberId: string;
+    type: 'EMAIL_CHANGE_NOTICE' | 'DELETION_RECEIPT';
+    payload?: Record<string, unknown>;
+  }): Promise<NotificationReceipt> {
+    const notificationId = generateUUID();
+    const now = new Date().toISOString();
+    const keys = KeyBuilder.notificationReceipt(params.familyId, notificationId);
+
+    const receipt: NotificationReceipt = {
+      ...keys,
+      notificationId,
+      familyId: params.familyId,
+      memberId: params.memberId,
+      type: params.type,
+      status: 'queued',
+      payload: params.payload,
+      entityType: 'NotificationReceipt',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await docClient.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: receipt,
+      })
+    );
+
+    logger.info('User settings receipt queued', {
+      notificationId,
+      familyId: params.familyId,
+      type: params.type,
+    });
+
+    return receipt;
   }
 }

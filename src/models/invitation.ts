@@ -305,5 +305,77 @@ export class InvitationModel {
 
     return { valid: true };
   }
+
+  /**
+   * Update invitation expiration date and generate new token
+   */
+  static async updateExpiration(
+    familyId: string,
+    invitationId: string,
+    newExpiresAt: string,
+    newToken: string,
+    newTokenSignature: string
+  ): Promise<Invitation> {
+    const now = new Date().toISOString();
+    const keys = generateInvitationKeys(familyId, invitationId, '');
+
+    // Calculate new TTL (14 days from new expiration)
+    const ttlGraceSeconds = parseInt(
+      process.env['INVITATION_TTL_GRACE_SECONDS'] || '604800',
+      10
+    );
+    const ttl = Math.floor(new Date(newExpiresAt).getTime() / 1000) + ttlGraceSeconds;
+
+    // Generate new GSI keys with new token
+    const newKeys = generateInvitationKeys(familyId, invitationId, newToken);
+
+    try {
+      const result = await docClient.send(
+        new UpdateCommand({
+          TableName: TABLE_NAME,
+          Key: { PK: keys.PK, SK: keys.SK },
+          UpdateExpression: `SET #expiresAt = :expiresAt, #ttl = :ttl, #token = :token, #tokenSignature = :tokenSignature, #GSI1PK = :GSI1PK, #updatedAt = :updatedAt`,
+          ExpressionAttributeNames: {
+            '#expiresAt': 'expiresAt',
+            '#ttl': 'ttl',
+            '#token': 'token',
+            '#tokenSignature': 'tokenSignature',
+            '#GSI1PK': 'GSI1PK',
+            '#updatedAt': 'updatedAt',
+          },
+          ExpressionAttributeValues: {
+            ':expiresAt': newExpiresAt,
+            ':ttl': ttl,
+            ':token': newToken,
+            ':tokenSignature': newTokenSignature,
+            ':GSI1PK': newKeys.GSI1PK,
+            ':updatedAt': now,
+          },
+          ConditionExpression: 'attribute_exists(PK)',
+          ReturnValues: 'ALL_NEW',
+        })
+      );
+
+      if (!result.Attributes) {
+        throw new Error('Invitation not found');
+      }
+
+      logger.info('Invitation expiration updated', {
+        invitationId,
+        familyId,
+        newExpiresAt,
+      });
+
+      const { PK, SK, GSI1PK, GSI1SK, ...invitation } = result.Attributes as InvitationItem;
+      return invitation as Invitation;
+    } catch (error) {
+      logger.error('Failed to update invitation expiration', error as Error, {
+        invitationId,
+        familyId,
+        newExpiresAt,
+      });
+      throw error;
+    }
+  }
 }
 

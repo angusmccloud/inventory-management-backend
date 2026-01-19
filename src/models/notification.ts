@@ -45,6 +45,7 @@ export interface LowStockNotification {
   status: LowStockNotificationStatus;
   currentQuantity: number;
   threshold: number;
+  unit?: string;
   entityType: 'Notification';
   createdAt: string;
   updatedAt: string;
@@ -60,6 +61,7 @@ export interface LowStockNotificationInput {
   itemName: string;
   currentQuantity: number;
   threshold: number;
+  unit?: string;
 }
 
 /**
@@ -102,6 +104,7 @@ export class NotificationModel {
       status,
       currentQuantity: input.currentQuantity,
       threshold: input.threshold,
+      unit: input.unit,
       entityType: 'Notification',
       createdAt: now,
       updatedAt: now,
