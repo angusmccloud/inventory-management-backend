@@ -4,9 +4,11 @@
  */
 
 export function baseNotificationFooter(unsubscribeUrl?: string, preferencesUrl?: string) {
-  const unsubscribeLink = unsubscribeUrl ? `Unsubscribe: ${unsubscribeUrl}` : '';
-  const prefsLink = preferencesUrl ? `Manage preferences: ${preferencesUrl}` : '';
-  return [`--`, unsubscribeLink, prefsLink].filter(Boolean).join('\n');
+  const footerLink = unsubscribeUrl || preferencesUrl;
+  if (!footerLink) {
+    return '--';
+  }
+  return ['--', `Manage your email preferences or unsubscribe: ${footerLink}`].join('\n');
 }
 
 export default baseNotificationFooter;

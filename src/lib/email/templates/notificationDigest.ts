@@ -121,13 +121,8 @@ export function buildDigestEmail(args: DigestTemplateArgs): {
 
   if (shoppingListUrl && inventoryUrl) {
     textLines.push(
-      `Add items to your Shopping List (${shoppingListUrl}) or Inventory (${inventoryUrl}) to dismiss notifications.`
+      'Add items to your Shopping List or Inventory to dismiss notifications.'
     );
-    textLines.push('');
-  }
-
-  if (preferencesUrl) {
-    textLines.push(`Manage your email preferences or unsubscribe: ${preferencesUrl}`);
     textLines.push('');
   }
 
@@ -190,20 +185,13 @@ export function buildDigestEmail(args: DigestTemplateArgs): {
         </p>`
       : '';
 
-  const preferenceLine = preferencesUrl
-    ? `<p style="margin-top: 0.75rem; color: #4b5563;">
-        Manage your email preferences or unsubscribe:
-        <a href="${preferencesUrl}" style="color: #2563eb;">${preferencesUrl}</a>
-      </p>`
-    : '';
-
   const htmlFooterParts: string[] = [];
-  if (unsubscribeUrl)
-    htmlFooterParts.push(`<a href="${unsubscribeUrl}" style="color: #6b7280;">Unsubscribe</a>`);
-  if (preferencesUrl)
+  const footerLink = unsubscribeUrl || preferencesUrl;
+  if (footerLink) {
     htmlFooterParts.push(
-      `<a href="${preferencesUrl}" style="color: #6b7280;">Manage notification preferences</a>`
+      `<a href="${footerLink}" style="color: #6b7280;">Manage your email preferences or unsubscribe</a>`
     );
+  }
 
   const html = `
 <!DOCTYPE html>
@@ -231,7 +219,6 @@ export function buildDigestEmail(args: DigestTemplateArgs): {
   ${oldestWarning}
   ${dashboardLink}
   ${actionLinks}
-  ${preferenceLine}
 
   <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0 1rem;">
 

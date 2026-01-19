@@ -86,13 +86,13 @@ export class InventoryService {
             {
               to: admin.email,
               title: subject,
-              message: [
-                `You're running low on ${item.name}. You're down to ${quantityText}`,
-                `Add it to your Shopping List ${shoppingListUrl} or inventory ${inventoryUrl} to dismiss notification`,
-                `Manage your email preferences or unsubscribe: ${preferencesUrl}`,
-              ].join('\n'),
+              message: `You're running low on ${item.name}. You're down to ${quantityText}.`,
               unsubscribeUrl,
               preferencesUrl,
+              actionLinks: [
+                { label: 'Shopping List', url: shoppingListUrl },
+                { label: 'Inventory', url: inventoryUrl },
+              ],
             },
             undefined,
             admin.memberId

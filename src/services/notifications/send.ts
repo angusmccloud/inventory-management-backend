@@ -13,6 +13,7 @@ export interface NotificationSendPayload {
   message?: string;
   unsubscribeUrl?: string;
   preferencesUrl?: string;
+  actionLinks?: Array<{ label: string; url: string }>;
 }
 
 export interface NotificationSendOptions {
@@ -69,6 +70,7 @@ export async function sendNotification(
       message: msg,
       unsubscribeUrl,
       preferencesUrl,
+      actionLinks: payload?.actionLinks,
     });
 
     const cmd = new SendEmailCommand({
