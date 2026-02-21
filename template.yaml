@@ -1166,7 +1166,6 @@ Resources:
       Handler: handlers/invitations/acceptInvitation.handler
       Description: Accept invitation and create member account (public)
       Role: !GetAtt LambdaExecutionRole.Arn
-      ReservedConcurrentExecutions: 10  # T076: Rate limiting - limit concurrent executions for public endpoint
       Environment:
         Variables:
           COGNITO_USER_POOL_ID: !Ref UserPool
